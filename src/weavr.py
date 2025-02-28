@@ -1,50 +1,78 @@
-from langchain_community.vectorstores import Chroma
-from langchain_community.embeddings import HuggingFaceEmbeddings
+import os
+import requests
 from langchain.prompts import ChatPromptTemplate
-from langchain_community.llms import HuggingFacePipeline
-from langchain.schema.runnable import RunnablePassthrough
-from langchain.schema.output_parser import StrOutputParser
-from transformers import pipeline
 
-# Initialize embeddings
-embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-mpnet-base-v2")
+# Together.AI Configuration
+from config_loader import load_api_key
+from together import Together
 
-# Load the existing Chroma database
-persist_directory = "db"
-db = Chroma(persist_directory=persist_directory, embedding_function=embeddings)
+# 🔹 Ask the user whether to use RAG BEFORE anything else runs
+use_rag = input("Would you like to enable RAG (Retrieval-Augmented Generation)? (yes/no): ").strip().lower()
+USE_RAG = use_rag in ["yes", "y"]
 
-# Set up retriever
-retriever = db.as_retriever(search_kwargs={"k": 3})
+# Load API Key
+TOGETHER_API_KEY = load_api_key()
+client = Together(api_key=TOGETHER_API_KEY)
 
-# Create prompt template
-template = """Answer the question based on the following context:
-Context: {context}
-Question: {question}
-Answer:"""
+# Import FAISS-based retrieval *AFTER* checking the RAG setting
+if USE_RAG:
+    from rag_poc import get_context  # Import only if RAG is enabled
 
-prompt = ChatPromptTemplate.from_template(template)
+chat_history = []  # 🔹 Stores conversation history
 
-# Initialize pipeline using your handler
-pipe = pipeline("text2text-generation", model="google/flan-t5-small", device=-1)  # -1 for CPU
-llm = HuggingFacePipeline(pipeline=pipe)
+def query_together(query):
+    """Retrieves relevant context (if RAG is enabled) and queries the AI model."""
+    global chat_history
 
-# Create RAG chain
-rag_chain = (
-    {"context": retriever, "question": RunnablePassthrough()}
-    | prompt
-    | llm
-    | StrOutputParser()
-)
+    # 🔹 Adjust context handling
+    context = get_context(query) if USE_RAG else ""
 
-# Query loop
+    # 🔹 If no context is found, avoid restrictive language
+    if not context.strip():
+        context = "Use your imagination and provide a complete response."
+
+    # 🔹 Store query in chat history for better follow-up handling
+    chat_history.append(f"User: {query}")
+    if len(chat_history) > 5:  # Keep only last 5 exchanges
+        chat_history = chat_history[-5:]
+
+    # 🔹 Fixed prompt formatting
+    full_prompt = f"""You are an AI assistant. Answer the user's request fully and thoughtfully.
+
+### Context:
+{context}
+
+### Chat History:
+{" ".join(chat_history)}
+
+User: {query}
+AI:
+"""
+
+    try:
+        response = client.completions.create(
+            model="mistralai/Mixtral-8x7B-v0.1",
+            prompt=full_prompt,
+            temperature=0.8,  # 🔹 Increased for more creativity
+            max_tokens=300,   # 🔹 Allow longer responses
+            top_p=0.9
+        )
+        
+        answer = response.choices[0].text.strip()
+        chat_history.append(f"AI: {answer}")  # 🔹 Store AI response in history
+        return answer
+    except Exception as e:
+        return f"API Error: {e}"
+
+# Interactive Query Loop
+print(f"\n🚀 Weavr AI is running with {'RAG enabled ✅' if USE_RAG else 'RAG disabled ❌'}\n")
 while True:
     query = input("Enter your query (or type 'exit'): ")
     if query.lower() == "exit":
         break
 
-    try:
-        response = rag_chain.invoke(query)
-        print(response)
-    except Exception as e:
-        print(f"Error: {e}")
+    response = query_together(query)
+    print("\n--- Response ---\n", response)
+
+print("Script Complete")
 

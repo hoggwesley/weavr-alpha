@@ -1,0 +1,16 @@
+markdown
+beautifulsoup4
+langchain
+langchain_community
+langchain-together
+faiss-cpu
+transformers
+fastapi
+uvicorn
+pydantic
+pyyaml
+orjson
+torch
+numpy
+requests
+watchdog

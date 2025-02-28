@@ -1,8 +1,0 @@
-markdown
-beautifulsoup4
-langchain
-langchain_community
-sentence-transformers
-chromadb
-huggingface_hub
-transformers

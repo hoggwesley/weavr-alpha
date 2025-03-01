@@ -61,73 +61,63 @@ if not IS_TUI_MODE:
 conversation_history = ""
 
 while True:
-    try:
+    if IS_TUI_MODE:
+        query = sys.stdin.readline().strip()
+    else:
+        query = input("> ").strip()
+
+    if query.lower() == "/exit":
         if IS_TUI_MODE:
-            query = sys.stdin.readline().strip()
-            if not query:  # Handle empty input in TUI mode
-                continue
-        else:
-            query = input("> ").strip()
-
-        if query.lower() == "/exit":
-            if IS_TUI_MODE:
-                print(json.dumps({"type": "exit"}))
-                sys.stdout.flush()  # Ensure response is sent before exit
-            print("Exiting Weavr AI...")
-            break
-
-        elif query.lower() == "/model":
-            # ✅ Show numbered list of available models
-            config = load_config()
-            models = list(config.get("together_ai", {}).get("models", {}).items())
-
-            current_index = next((i for i, (key, _) in enumerate(models) if key == get_model_name()), -1)
-            new_index = (current_index + 1) % len(models)
-            new_model_key = models[new_index][0]
-            set_model_name(new_model_key)
-
-            if IS_TUI_MODE:
-                print(json.dumps({"type": "model", "new_model": models[new_index][1]}))
-                sys.stdout.flush()
-            else:
-                print(f"✅ Model switched to {models[new_index][1]} ({new_model_key})")
-
-        elif query.lower() == "/rag":
-            # ✅ Toggle Retrieval Mode
-            USE_RAG = not USE_RAG
-            status = "enabled" if USE_RAG else "disabled"
-
-            if IS_TUI_MODE:
-                print(json.dumps({"type": "rag", "status": status}))
-                sys.stdout.flush()
-            else:
-                print(f"🔄 RAG Mode {status.upper()}")
-
-        else:
-            # Retrieve context if RAG is enabled
-            context = get_context(query, retriever) if USE_RAG else ""
-
-            # Get AI response and token count
-            response, token_count = query_together(query, context)
-
-            # Append AI response to the conversation history
-            conversation_history += f"User: {query}\nAI: {response}\n"
-
-            if IS_TUI_MODE:
-                print(json.dumps({"type": "response", "text": response, "tokens": token_count}))
-                sys.stdout.flush()
-            else:
-                print("\n--- AI Response ---\n", response)
-                print(f"🔹 Tokens used: {token_count}")
-
-    except EOFError:
-        print("❌ TUI connection closed. Exiting Weavr AI...")
+            print(json.dumps({"type": "exit"}))
+        print("Exiting Weavr AI...")
         break
-    except Exception as e:
+
+    elif query.lower() == "/model":
+        # ✅ Show numbered list of available models
+        config = load_config()
+        models = list(config.get("together_ai", {}).get("models", {}).items())
+
+        current_index = next((i for i, (key, _) in enumerate(models) if key == get_model_name()), -1)
+        new_index = (current_index + 1) % len(models)
+        new_model_key = models[new_index][0]
+        set_model_name(new_model_key)
+
         if IS_TUI_MODE:
-            print(json.dumps({"type": "error", "message": str(e)}))
-            sys.stdout.flush()
+            print(json.dumps({"type": "model", "new_model": models[new_index][1]}))
         else:
-            print(f"❌ Error: {str(e)}")
+            print(f"✅ Model switched to {models[new_index][1]} ({new_model_key})")
+
+        continue  # Restart loop after model change
+
+    elif query.lower() == "/rag":
+        # ✅ Toggle Retrieval Mode
+        USE_RAG = not USE_RAG
+        status = "enabled" if USE_RAG else "disabled"
+
+        if IS_TUI_MODE:
+            print(json.dumps({"type": "rag", "status": status}))
+        else:
+            print(f"🔄 RAG Mode {status.upper()}")
+
+        continue  # Restart loop after toggling RAG
+
+    else:
+        # Retrieve context if RAG is enabled
+        context = get_context(query, retriever) if USE_RAG else ""
+
+        # Get AI response and token count
+        response, token_count = query_together(query, context)
+
+        # Append AI response to the conversation history
+        conversation_history += f"User: {query}\nAI: {response}\n"
+
+        if IS_TUI_MODE:
+            print(json.dumps({"type": "response", "text": response, "tokens": token_count}))
+        else:
+            print("\n--- AI Response ---\n", response)
+            print(f"🔹 Tokens used: {token_count}")
+
+if IS_TUI_MODE:
+    print(json.dumps({"type": "exit"}))
 
 print("Script Complete")

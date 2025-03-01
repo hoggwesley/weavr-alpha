@@ -1,2 +1,6 @@
-together:
-  api_key: "tgp_v1__726-k96-059xb9oXakrqiDENDJUoeIqNtXnmq4gup8"
+together_ai:
+  api_key: tgp_v1__726-k96-059xb9oXakrqiDENDJUoeIqNtXnmq4gup8
+  default_model: mixtral_8x7b_v01
+  models:
+    mixtral_8x7b_v01: mistralai/Mixtral-8x7B-Instruct-v0.1
+    qwen_72b_instruct: Qwen/Qwen2-72B-Instruct

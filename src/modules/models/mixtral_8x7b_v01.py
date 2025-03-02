@@ -1,56 +1,28 @@
 from together import Together
-from modules.config_loader import load_api_key
+from modules.config_loader import load_api_key, get_system_prompt  # ✅ Correct import
 
 def generate_response(query, context="", task_type="default"):
-    """Handles Mixtral-8x7B v0.1 AI requests with custom settings."""
+    """Handles Mixtral-8x7B AI requests with proper instruction formatting."""
     api_key = load_api_key()
     client = Together(api_key=api_key)
 
     model_name = "mistralai/Mixtral-8x7B-Instruct-v0.1"
 
-    system_prompts = {
-        "default": "You are a logical AI assistant providing accurate, structured responses.",
-        "technical": "You are an AI expert in programming and troubleshooting.",
-        "research": "You are an AI researcher. Provide only factual, well-researched information.",
-        "creative": "You are a creative storyteller generating engaging narratives.",
-        "casual": "You are a conversational AI, keeping discussions friendly and engaging."
-    }
+    system_prompt = get_system_prompt()  # ✅ Enforces stricter system prompt usage
 
-    system_prompt = system_prompts.get(task_type, system_prompts["default"])
+    temperature = 0.3  # ✅ Lowered for factual accuracy
+    max_tokens = min(400, max(100, len(query) * 5))  # ✅ More dynamic length control
 
-    temperature = {
-        "default": 0.4,
-        "technical": 0.3,
-        "research": 0.4,
-        "creative": 0.8,
-        "casual": 0.6
-    }[task_type]
-
-    max_tokens = 600
-
-    prompt = f"""
-    {system_prompt}
-
-    Rules:
-    - If context is provided, integrate it carefully.
-    - Do not fabricate details. If unsure, indicate uncertainty.
-    - Keep responses logical, structured, and clear.
-    
-    Previous Conversation:
-    {context}
-
-    User Query:
-    {query}
-
-    AI Response:
-    """
+    # **Use Mixtral's recommended [INST] formatting**
+    prompt = f"<s> [INST] {system_prompt}\nUser: {query} [/INST]"
 
     response = client.completions.create(
         model=model_name,
-        prompt=prompt,
+        prompt=prompt.strip(),
         temperature=temperature,
         max_tokens=max_tokens,
-        top_p=0.9
+        top_p=0.7  # ✅ Tighter control on randomness
     )
 
     return response.choices[0].text.strip(), len(response.choices[0].text.split())
+

@@ -29,11 +29,11 @@ if USE_RAG:
         print(json.dumps({"type": "status", "message": "Waiting for knowledge base path..."}))
         knowledge_base_dir = sys.stdin.readline().strip()
     else:
-        knowledge_base_dir = input("Enter the path to your knowledge directory (or press Enter to skip): ").strip()
+        knowledge_base_dir = input("📂 Enter the path to your knowledge directory (or press Enter to skip): ").strip()
 
     if knowledge_base_dir and os.path.exists(knowledge_base_dir) and os.path.isdir(knowledge_base_dir):
-        print(f"📂 Using knowledge directory: {knowledge_base_dir}")
-        
+        print(f"✅ Using knowledge directory: {knowledge_base_dir}")
+
         # Initialize the retriever (FAISS)
         from modules.indexing import load_documents, load_or_create_faiss
         from langchain_together import TogetherEmbeddings
@@ -47,7 +47,7 @@ if USE_RAG:
 
 if not IS_TUI_MODE:
     # ✅ Show Startup Info (CLI Mode Only)
-    print(f"\n🚀 Weavr AI is running with {'knowledge retrieval ✅' if USE_RAG else 'no retrieval ❌'}")
+    print(f"\n🕷️ Weavr AI is running with {'knowledge retrieval ✅' if USE_RAG else 'no retrieval ❌'}")
     print(f"🔹 Current AI Model: {get_model_name()} ({get_model_api_name()})")
 
     # ✅ Command Menu
@@ -67,6 +67,7 @@ while True:
             if not query:  # Handle empty input in TUI mode
                 continue
         else:
+            print("\n🎭 --- User --- 🎭")
             query = input("> ").strip()
 
         if query.lower() == "/exit":
@@ -95,13 +96,31 @@ while True:
         elif query.lower() == "/rag":
             # ✅ Toggle Retrieval Mode
             USE_RAG = not USE_RAG
-            status = "enabled" if USE_RAG else "disabled"
+            status = "ENABLED" if USE_RAG else "DISABLED"
+
+            if USE_RAG:
+                print("\n📂 Enter the path to your knowledge directory:")
+                knowledge_base_dir = input("> ").strip()
+
+                if not os.path.exists(knowledge_base_dir) or not os.path.isdir(knowledge_base_dir):
+                    print("❌ Invalid directory! RAG will remain disabled.")
+                    USE_RAG = False
+                else:
+                    print(f"✅ Using knowledge directory, please wait...")
+
+                    # ✅ Initialize RAG components
+                    from modules.indexing import load_documents, load_or_create_faiss
+                    from langchain_together import TogetherEmbeddings
+
+                    documents = load_documents(knowledge_base_dir)
+                    embedding_model = TogetherEmbeddings(model="togethercomputer/m2-bert-80M-8k-retrieval", api_key=load_api_key())
+                    retriever = load_or_create_faiss(documents, embedding_model).as_retriever(search_kwargs={"k": 5})
 
             if IS_TUI_MODE:
                 print(json.dumps({"type": "rag", "status": status}))
                 sys.stdout.flush()
             else:
-                print(f"🔄 RAG Mode {status.upper()}")
+                print(f"🔄 RAG Mode {status}")
 
         else:
             # Retrieve context if RAG is enabled
@@ -117,8 +136,9 @@ while True:
                 print(json.dumps({"type": "response", "text": response, "tokens": token_count}))
                 sys.stdout.flush()
             else:
-                print("\n--- AI Response ---\n", response)
-                print(f"🔹 Tokens used: {token_count}")
+                print("\n🕷️ --- Weavr AI --- 🕷️")
+                print(response)
+                print(f"🪙 Tokens Used: {token_count}")
 
     except EOFError:
         print("❌ TUI connection closed. Exiting Weavr AI...")

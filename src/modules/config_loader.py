@@ -23,6 +23,11 @@ def load_api_key():
 
     return api_key
 
+def get_system_prompt():
+    """Retrieves the default system prompt from config.yaml."""
+    config = load_config()
+    return config.get('together_ai', {}).get('default_system_prompt', "You are an AI assistant.")  # ✅ Fix: Now defined properly
+
 def get_model_name():
     """Retrieves the currently selected model key from config.yaml."""
     config = load_config()

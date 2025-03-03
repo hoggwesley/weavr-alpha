@@ -21,6 +21,19 @@ def parse_markdown_file(filepath):
         print(f"⚠️ Error parsing {filepath}: {e}")
         return ""
 
+import os
+
+def get_modified_files(knowledge_base_dir, last_index_time):
+    """Returns a list of modified files since last index time."""
+    modified_files = []
+    for root, _, files in os.walk(knowledge_base_dir):
+        for file in files:
+            if file.endswith(".md"):
+                full_path = os.path.join(root, file)
+                if os.path.getmtime(full_path) > last_index_time:
+                    modified_files.append(full_path)
+    return modified_files
+
 def load_documents(knowledge_base_dir, verbose=False):
     """Loads and chunks Markdown files from the given directory."""
     documents = []
@@ -34,9 +47,22 @@ def load_documents(knowledge_base_dir, verbose=False):
         print("❌ ERROR: Knowledge base directory does not exist!")
         return []
 
-    chunk_size = 500
-    chunk_overlap = 50
-    splitter = RecursiveCharacterTextSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
+    from langchain.text_splitter import RecursiveCharacterTextSplitter
+
+    class CustomSplitter(RecursiveCharacterTextSplitter):
+        """Custom text splitter that stops at section breaks (---)."""
+
+        def split_text(self, text):
+            sections = text.split("\n---\n")  # Split at section breaks
+            final_chunks = []
+            for section in sections:
+                chunks = super().split_text(section.strip())  # Use normal chunking within sections
+                final_chunks.extend(chunks)
+            return final_chunks
+
+    chunk_size = 2000
+    chunk_overlap = 200
+    splitter = CustomSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
 
     # Get all files first, then process them
     all_files = []

@@ -30,7 +30,7 @@ for i, doc in enumerate(documents[:5]):
 # 2. Load embeddings
 TOGETHER_API_KEY = load_api_key()
 embedding_model = TogetherEmbeddings(
-    model="togethercomputer/m2-bert-80M-8k-retrieval",
+    model="BAAI/bge-large-en-v1.5",
     api_key=TOGETHER_API_KEY
 )
 

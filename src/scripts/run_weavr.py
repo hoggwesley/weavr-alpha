@@ -40,7 +40,15 @@ if USE_RAG:
 
         documents = load_documents(knowledge_base_dir)  # Load documents and chunk them
         embedding_model = TogetherEmbeddings(model="togethercomputer/m2-bert-80M-8k-retrieval", api_key=load_api_key())
-        retriever = load_or_create_faiss(documents, embedding_model).as_retriever(search_kwargs={"k": 5})
+        retriever = load_or_create_faiss(documents, embedding_model)
+
+        if retriever is None:
+            print("❌ FAISS failed to load. Retrieval will not work.")
+        else:
+            print("✅ FAISS Index Loaded Successfully!")
+
+        retriever = retriever.as_retriever(search_kwargs={"k": 5})
+
     else:
         print("⚠️ No valid directory provided. Running AI without document retrieval.")
         USE_RAG = False
@@ -124,9 +132,13 @@ while True:
 
         else:
             # Retrieve context if RAG is enabled
-            context = get_context(query, retriever) if USE_RAG else ""
+            context = get_context(query, retriever) if USE_RAG and retriever else "❌ Retrieval Failed"
 
-            # Get AI response and token count
+            if "❌ Retrieval Failed" in context or not context.strip():
+                print("❌ FAISS retrieval failed. AI is generating a response without knowledge base data.")
+            else:
+                print("✅ Retrieved Context:\n", context)
+
             response, token_count = query_together(query, context)
 
             # Append AI response to the conversation history

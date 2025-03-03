@@ -35,7 +35,7 @@ def query_together(query, context="", task_type="default"):
     if not model_name:
         raise ValueError(f"ERROR: Model '{model_key}' is not found in config.yaml!")
 
-    module_name = f"modules.models.{model_key}"
+    module_name = f"modules.models.{model_key}"  # ✅ Correct path
 
     try:
         model_module = importlib.import_module(module_name)
@@ -48,15 +48,23 @@ def query_together(query, context="", task_type="default"):
     # ✅ Enforce system prompt for stricter behavior
     system_prompt = get_system_prompt()
 
-    response_text, token_count = model_module.generate_response(query, context, task_type)
+    # ✅ Get AI response (with optional CoT reasoning)
+    response_text, token_count, reasoning_steps = model_module.generate_response(
+        query, context, task_type
+    )
 
     # ✅ Stronger cleanup for hallucinated dialogue
     response_text = response_text.replace("User Query:", "").replace("--- AI Response ---", "").strip()
     response_text = response_text.replace("Context:", "").replace("User:", "").replace("Response:", "").strip()
 
-    return response_text, token_count
+    return response_text, token_count, reasoning_steps
 
 if __name__ == "__main__":
     print("🔹 Running AI Generation Test...")
-    response = query_together("What is Weavr AI?")
+    response, token_count, reasoning_steps = query_together("What is Weavr AI?", task_type="cot")
     print(f"✅ AI Response:\n{response}")
+
+    if reasoning_steps:
+        print("\n🔍 Chain-of-Thought Reasoning:")
+        for step in reasoning_steps:
+            print(f" - {step}")

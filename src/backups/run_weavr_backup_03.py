@@ -67,13 +67,12 @@ if not IS_TUI_MODE:
 
 # ✅ Main Loop for AI Interaction
 conversation_history = ""
-USE_COT = False  # ✅ New flag for CoT toggle
 
 while True:
     try:
         if IS_TUI_MODE:
             query = sys.stdin.readline().strip()
-            if not query:
+            if not query:  # Handle empty input in TUI mode
                 continue
         else:
             print("\n🎭 --- User --- 🎭")
@@ -82,7 +81,7 @@ while True:
         if query.lower() == "/exit":
             if IS_TUI_MODE:
                 print(json.dumps({"type": "exit"}))
-                sys.stdout.flush()
+                sys.stdout.flush()  # Ensure response is sent before exit
             print("Exiting Weavr AI...")
             break
 
@@ -131,12 +130,6 @@ while True:
             else:
                 print(f"🔄 RAG Mode {status}")
 
-        elif query.lower() == "/cot":
-            # ✅ Toggle Chain-of-Thought Reasoning
-            USE_COT = not USE_COT
-            status = "ENABLED" if USE_COT else "DISABLED"
-            print(f"🔄 Chain-of-Thought (CoT) Reasoning {status}")
-
         else:
             # Retrieve context if RAG is enabled
             context = get_context(query, retriever) if USE_RAG and retriever else "❌ Retrieval Failed"
@@ -146,20 +139,18 @@ while True:
             else:
                 print("✅ Retrieved Context:\n", context)
 
-            # ✅ Pass CoT flag to `query_together()`
-            response, token_count, reasoning_steps = query_together(query, context, task_type="cot" if USE_COT else "default")
+            response, token_count = query_together(query, context)
 
-            # ✅ Print CoT reasoning steps before AI's response
-            if USE_COT and reasoning_steps:
-                print("\n🔍 Chain-of-Thought Reasoning:")
-                for i, step in enumerate(reasoning_steps, 1):
-                    print(f"   {i}. {step}")  # ✅ Adds numbering for better structure
+            # Append AI response to the conversation history
+            conversation_history += f"User: {query}\nAI: {response}\n"
 
-
-            # ✅ Print AI Response
-            print("\n🕷️ --- Weavr AI --- 🕷️")
-            print(response)
-            print(f"🪙 Tokens Used: {token_count}")
+            if IS_TUI_MODE:
+                print(json.dumps({"type": "response", "text": response, "tokens": token_count}))
+                sys.stdout.flush()
+            else:
+                print("\n🕷️ --- Weavr AI --- 🕷️")
+                print(response)
+                print(f"🪙 Tokens Used: {token_count}")
 
     except EOFError:
         print("❌ TUI connection closed. Exiting Weavr AI...")

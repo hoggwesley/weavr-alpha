@@ -20,6 +20,10 @@ def get_context(query, retriever, top_k=10):
     """
     docs = retriever.invoke(query) if retriever else []
 
+    # If no results, return a default message instead of "retrieval failed"
+    if not docs:
+        return "No strong matches found in the knowledge base, but here's a general response."
+
     # **If one document is a near-perfect match, prioritize only that one**
     if len(docs) > 0 and query.lower() in docs[0].metadata.get("source", "").lower():
         docs = [docs[0]]  # Keep only the best match

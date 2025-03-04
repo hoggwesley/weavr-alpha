@@ -191,15 +191,26 @@ while True:
                 # Print CoT reasoning steps if available
                 if USE_COT and reasoning_steps:
                     print("\n🔍 Chain-of-Thought Reasoning:")
-                    for step in reasoning_steps:
-                        # Clean up step formatting for display
+                    for i, step in enumerate(reasoning_steps):
+                        # Strip 'Step X:' prefix and clean up formatting for display
                         step_text = re.sub(r'^Step \d+:\s*', '', step)
                         print(f"   • {step_text.strip()}")
-
-                # Print AI Response
+                
+                # Print AI Response - completely separate from the reasoning steps
                 print("\n🕷️ --- Weavr AI --- 🕷️")
-                print(response.strip())
-                print(f"🪙 Tokens Used: {token_count}")
+                
+                # Format the answer as a coherent narrative without the steps
+                if USE_COT and "=== ANSWER ===" in response:
+                    parts = response.split("=== ANSWER ===")
+                    answer_part = parts[1].strip() if len(parts) > 1 else "No final answer provided."
+                    
+                    # Just print the final answer without the steps
+                    print(answer_part)
+                else:
+                    # Regular non-CoT response
+                    print(response.strip())
+                
+                print(f"\n🪙 Tokens Used: {token_count}")
 
             except Exception as query_error:
                 debug_print(f"Error during query_together: {str(query_error)}")

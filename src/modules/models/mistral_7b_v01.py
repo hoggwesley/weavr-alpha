@@ -1,5 +1,5 @@
 from together import Together
-from modules.config_loader import load_api_key, get_system_prompt
+from modules.config_loader import load_api_key
 import re
 import traceback
 
@@ -9,21 +9,21 @@ DEBUG_MODE = True
 def debug_print(message):
     """Print debug information when debug mode is enabled"""
     if DEBUG_MODE:
-        print(f"🔍 DEBUG [mixtral]: {message}")
+        print(f"🔍 DEBUG [mistral-7b]: {message}")
 
 def generate_response(prompt):
-    """Handles Mixtral-8x7B AI requests with proper instruction formatting."""
+    """Handles Mistral-7B AI requests with proper instruction formatting."""
     debug_print(f"generate_response called with prompt (first 100 chars): {prompt[:100]}...")
     
     try:
         api_key = load_api_key()
         client = Together(api_key=api_key)
 
-        model_name = "mistralai/Mixtral-8x7B-Instruct-v0.1"
+        model_name = "mistralai/Mistral-7B-Instruct-v0.1"
         debug_print(f"Using model: {model_name}")
 
-        temperature = 0.65
-        max_tokens = 2048  # Increase max tokens for longer responses
+        temperature = 0.7  # Slightly higher temperature for more creative reasoning
+        max_tokens = 1024  # Reduced for reasoning steps
         
         # Add stop sequences to ensure proper formatting
         stop_sequences = ["[INST]", "[/INST]", "User:", "Assistant:", "Human:", "AI:"]
@@ -35,19 +35,14 @@ def generate_response(prompt):
             max_tokens=max_tokens,
             top_p=0.7,
             stop=stop_sequences,
-            repetition_penalty=1.15  # Prevent format deviations
+            repetition_penalty=1.1
         )
 
         raw_text = response.choices[0].text.strip()
         token_count = len(raw_text.split())
         debug_print(f"Received {token_count} tokens in response")
-
-        # Add distinct debug prints
-        if "Generate detailed reasoning steps" in prompt:
-            debug_print("Generating REASONING STEPS")
-        elif "Synthesize a concise and well-structured final answer" in prompt:
-            debug_print("Generating FINAL ANSWER")
-
+        debug_print("Generating REASONING STEPS with Mistral-7B")
+        
         return raw_text, token_count
         
     except Exception as e:

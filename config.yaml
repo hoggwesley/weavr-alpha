@@ -9,5 +9,16 @@ together_ai:
     \ state the limits of your knowledge rather than making assumptions.\n- Maintain\
     \ a neutral tone\xE2\u20AC\u201Ddo not over-explain or engage in excessive storytelling.\n"
   models:
-    mixtral_8x7b_v01: mistralai/Mixtral-8x7B-Instruct-v0.1
-    qwen_72b_instruct: Qwen/Qwen2-72B-Instruct
+    mixtral_8x7b_v01:
+      api_name: "mistralai/Mixtral-8x7B-Instruct-v0.1"
+    mistral_7b_v01:
+      api_name: "mistralai/Mistral-7B-Instruct-v0.1"
+    qwen_72b_instruct:
+      api_name: "Qwen/Qwen2-72B-Instruct"
+
+llm:
+  model_name: "mixtral_8x7b_v01"
+  system_prompt: "You are a helpful AI assistant that provides detailed and accurate responses."
+
+debugging:
+  debug_mode: True

@@ -4,14 +4,15 @@ import os
 # ✅ Fix path so 'modules' is recognized correctly
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from modules.config_loader import load_api_key, get_model_name, get_model_api_name, get_system_prompt  # ✅ Now properly imported
+from modules.config_loader import load_api_key, get_model_name, get_model_api_name, get_system_prompt
+from modules.cot_engine import MixtralCoTFormatter  # Updated import path
 
 import importlib
 import tiktoken
 import re
 import traceback  # For more detailed error logging
 
-# Debug mode
+# Enable debugging
 DEBUG_MODE = True
 
 def debug_print(message):
@@ -36,66 +37,11 @@ def clean_response(response_text):
 
     return response_text.strip()
 
-def validate_cot_structure(response):
-    """Ensures CoT output follows a structured format, while allowing slight variations."""
-    try:
-        debug_print(f"Validating CoT structure for response of length {len(response)}")
-        
-        # First, clean up the response text to handle potential formatting issues
-        response = response.strip()
-        
-        # Look for any step markers using a more flexible pattern that includes content
-        step_pattern = re.compile(r'Step\s*(\d+)\s*:\s*([^\n]*(?:\n(?!Step\s*\d+\s*:)[^\n]*)*)', re.IGNORECASE | re.MULTILINE)
-        raw_steps = step_pattern.finditer(response)
-        steps = [(m.group(1), m.group(2).strip()) for m in raw_steps]
-        debug_print(f"Found {len(steps)} complete steps")
-        
-        # Validate step content and sequence
-        if steps:
-            try:
-                step_nums = [int(num) for num, _ in steps]
-                steps_sequential = sorted(step_nums) == list(range(1, len(step_nums) + 1))
-                has_content = all(content.strip() for _, content in steps)
-                debug_print(f"Steps sequential: {steps_sequential}, all have content: {has_content}")
-                
-                # Look for any final answer marker
-                answer_markers = [
-                    "=== ANSWER ===",
-                    "Final answer:",
-                    "Final Answer:",
-                    "[Final conclusion]:",
-                    "In conclusion,",
-                    "To conclude,",
-                    "In summary,"
-                ]
-                has_answer = any(marker.lower() in response.lower() for marker in answer_markers)
-                debug_print(f"Has answer marker: {has_answer}")
-                
-                if not has_answer:
-                    # Check if there's substantial text after the last step
-                    _, last_content = steps[-1]
-                    remainder = response.split(last_content, 1)[-1].strip()
-                    has_answer = len(remainder) >= 50
-                    debug_print(f"Found implied answer: {has_answer}")
-                
-                return steps_sequential and has_content and (has_answer or len(steps) >= 3)
-                
-            except ValueError:
-                debug_print("Error processing step numbers")
-                return False
-        
-        debug_print("No valid steps found")
-        return False
-        
-    except Exception as e:
-        debug_print(f"Error in validate_cot_structure: {str(e)}")
-        debug_print(traceback.format_exc())
-        return False
-
-def query_together(query, context="", task_type="default"):
+def query_together(query, context="", task_type="default", cot_mode="default"):
     """Routes AI requests while ensuring clean response formatting."""
+    print("✅ query_together CALLED")
     try:
-        debug_print(f"query_together called with task_type={task_type}")
+        debug_print(f"query_together called with task_type={task_type}, cot_mode={cot_mode}")
         
         model_key = get_model_name()  
         model_name = get_model_api_name()
@@ -117,109 +63,103 @@ def query_together(query, context="", task_type="default"):
         # ✅ Enforce system prompt for stricter behavior
         system_prompt = get_system_prompt()
 
+        # Initialize CoT Engine
+        formatter = MixtralCoTFormatter()
+
         # ✅ Get AI response (with optional CoT reasoning)
-        cot_instruction = ""
         if task_type == "cot":
-            debug_print("Preparing CoT instruction based on query")
-            if any(word in query.lower() for word in ["why", "how", "explain"]):
-                cot_instruction = "Break this down logically, labeling each step explicitly (Step 1, Step 2, etc.)."
-            elif "story" in query.lower() or "describe" in query.lower():
-                cot_instruction = "Provide a structured narrative to explore this concept."
-            elif context and context.strip() != "No relevant retrieval data available.":
-                cot_instruction = f"Use the retrieved context below to guide your reasoning. Break your explanation into clear steps."
+            debug_print("Generating CoT reasoning steps")
+
+            # EXPERIMENT: Use Mistral-7B for reasoning steps
+            try:
+                reasoning_module = importlib.import_module("modules.models.mistral_7b_v01")
+                debug_print("Using Mistral-7B for reasoning steps")
+            except ModuleNotFoundError:
+                debug_print("Mistral-7B model not found, falling back to selected model")
+                reasoning_module = model_module
+
+            # First API call: Generate reasoning steps with Mistral-7B
+            reasoning_prompt = f"""<s>[INST] <<SYS>>
+{system_prompt}
+
+You are now the reasoning engine for Weavr AI. Your task is to provide clear analysis points.
+
+You MUST respond using a numbered list format:
+1. First key insight about the topic
+2. Second key insight about the topic
+3. Third key insight about the topic
+4. Fourth key insight about the topic
+
+Be concise, clear, and analytical.
+<</SYS>>
+
+Analyze this query step by step: {query}
+
+{context if context else ""}
+[/INST]"""
+
+            debug_print(f"Reasoning prompt: {reasoning_prompt[:200]}...")
+            debug_print("Calling generate_response for reasoning steps using Mistral-7B")
+            reasoning_text, reasoning_token_count = reasoning_module.generate_response(reasoning_prompt)
+            debug_print(f"Raw reasoning text: {reasoning_text[:200]}...")
+
+            # Extract reasoning steps
+            reasoning_steps, _ = formatter.parse_response(reasoning_text)  # Use formatter to parse steps
+            debug_print(f"Extracted {len(reasoning_steps)} reasoning steps from Mistral-7B")
+
+            # Second API call: Synthesize final answer with Mixtral-8x7B
+            synthesis_prompt = f"""<s>[INST] <<SYS>>
+{system_prompt}
+
+You are the main response engine for Weavr AI. Your task is to create a comprehensive, well-written response.
+
+I'll provide you with reasoning points from our analysis engine. DO NOT repeat these points verbatim or summarize them.
+Instead, use them as a foundation to craft an original, coherent, and insightful response that expands on these ideas.
+
+The response should:
+- Be written as 2-3 cohesive paragraphs
+- Provide deeper insights than the initial reasoning points
+- Present a thoughtful, nuanced perspective
+- Avoid explicitly mentioning "steps" or "reasoning points"
+- Sound natural and conversational, not like a summary
+
+Here are the reasoning points:
+{chr(10).join([re.sub(r'^Step \d+:\s*', '', step) for step in reasoning_steps])}
+<</SYS>>
+
+Based on these insights, provide a comprehensive and well-structured response to the original question.
+
+Original question: {query}
+[/INST]"""
+
+            debug_print(f"Synthesis prompt: {synthesis_prompt[:200]}...")
+            debug_print("Calling generate_response for final answer using Mixtral-8x7B")
+            final_answer_text, final_answer_token_count = model_module.generate_response(synthesis_prompt)
+            debug_print(f"Raw final answer from Mixtral-8x7B: {final_answer_text[:200]}...")
+            
+            # Clean the final answer
+            final_answer_text = final_answer_text.strip()
+            debug_print(f"Cleaned final answer: {final_answer_text[:100]}...")
+
+            # Combine token counts
+            token_count = reasoning_token_count + final_answer_token_count
+
+            # Format the final response - use newlines between steps for better readability
+            formatted_text = "\n\n".join(reasoning_steps)
+            
+            # Only append final answer if we have content
+            if final_answer_text:
+                formatted_text += f"\n\n=== ANSWER ===\n{final_answer_text}"
             else:
-                cot_instruction = "Analyze this question in a structured but conversational way."
-                
-            debug_print(f"CoT instruction: {cot_instruction}")
+                # Fallback if final answer is empty
+                formatted_text += "\n\n=== ANSWER ===\nBased on the analysis, no definitive conclusion can be reached."
 
-        context = context if context else "No relevant retrieval data available."
+            return formatted_text, token_count, reasoning_steps
         
-        # IMPORTANT FIX: Pass the cot_instruction parameter to the model's generate_response function
-        debug_print("Calling model's generate_response function")
-        response_text, token_count, reasoning_steps = model_module.generate_response(
-            query, 
-            context, 
-            task_type,
-            cot_instruction  # Pass this parameter explicitly
-        )
-        
-        debug_print(f"Got response, token_count={token_count}, reasoning_steps={len(reasoning_steps) if reasoning_steps else 0}")
-
-        # If CoT is enabled, validate response format
-        if task_type == "cot":
-            debug_print("Validating initial response")
-            valid_format = validate_cot_structure(response_text)
-            debug_print(f"Initial validation result: {valid_format}")
-            
-            if not valid_format:
-                print("❌ CoT validation failed. Adjusting format and retrying once...")
-                debug_print("Retrying with explicit formatting instructions")
-
-                enhanced_cot = """You MUST use this EXACT format:
-Step 1: First point of analysis
-Step 2: Second point of analysis
-Step 3: Further development
-Step 4: Final consideration
-
-=== ANSWER ===
-[Your final conclusion]"""
-                
-                retry_response, retry_token_count, retry_reasoning_steps = model_module.generate_response(
-                    query,
-                    context, 
-                    task_type,
-                    enhanced_cot
-                )
-                
-                retry_valid = validate_cot_structure(retry_response)
-                debug_print(f"Retry validation result: {retry_valid}")
-
-                if retry_valid:
-                    debug_print("Using retry response")
-                    response_text = retry_response
-                    token_count = retry_token_count
-                    reasoning_steps = retry_reasoning_steps
-                else:
-                    print("⚠️ Second CoT validation failed. Using first response.")
-                    debug_print("Keeping original response")
-            
-            # Extract steps and final answer
-            step_pattern = re.compile(r'Step\s*(\d+)\s*:\s*([^\n]*(?:\n(?!Step\s*\d+\s*:)[^\n]*)*)', re.IGNORECASE | re.MULTILINE)
-            steps = [(m.group(1), m.group(2).strip()) for m in step_pattern.finditer(response_text)]
-            reasoning_steps = [f"Step {num}: {content}" for num, content in steps]
-            
-            # Find final answer with various markers
-            answer_pattern = re.compile(
-                r'(?:=== ANSWER ===|Final [Aa]nswer:|In conclusion,|To conclude,|In summary,)\s*(.*?)$', 
-                re.DOTALL | re.IGNORECASE
-            )
-            answer_match = answer_pattern.search(response_text)
-            
-            if answer_match:
-                final_answer = answer_match.group(1).strip()
-            else:
-                # Use text after last step
-                final_text = response_text.split(reasoning_steps[-1])[-1].strip() if reasoning_steps else ""
-                if len(final_text) >= 50:
-                    final_answer = final_text
-                else:
-                    # Construct from last step
-                    _, last_content = steps[-1]
-                    final_answer = f"Based on this analysis, {last_content.lower()}"
-            
-            # Format final response
-            formatted_steps = []
-            for num, content in steps:
-                formatted_steps.append(f"{num}. {content}")
-            
-            # Clean up final answer
-            final_answer = final_answer.strip()
-            if not any(final_answer.lower().startswith(start) for start in ["based on", "therefore", "in conclusion", "to conclude", "in summary"]):
-                final_answer = "Based on this analysis, " + final_answer[0].lower() + final_answer[1:]
-            
-            return final_answer, token_count, formatted_steps
-            
         else:
+            # Non-CoT response
+            prompt = f"<s>[INST] {system_prompt}\nUser: {query} [/INST]"
+            response_text, token_count = model_module.generate_response(prompt)
             return response_text, token_count, []
         
     except Exception as e:

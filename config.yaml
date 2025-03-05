@@ -20,5 +20,8 @@ llm:
   model_name: "mixtral_8x7b_v01"
   system_prompt: "You are a helpful AI assistant that provides detailed and accurate responses."
 
+embedding:
+  model_name: "BAAI/bge-large-en-v1.5"
+
 debugging:
   debug_mode: True

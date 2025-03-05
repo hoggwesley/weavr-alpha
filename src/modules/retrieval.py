@@ -1,4 +1,9 @@
 from langchain_community.vectorstores import FAISS
+import os
+import re
+from modules.query_enhancement import enhance_query
+from rank_bm25 import BM25Okapi
+import numpy as np
 
 def get_faiss_retriever(index):
     """
@@ -12,51 +17,104 @@ def get_faiss_retriever(index):
         print("⚠️ FAISS index is raw (e.g., IndexFlatL2) and does not support .as_retriever().")
         return None
 
-def get_context(query, retriever, top_k=10):
+def get_context(query, retriever):
     """
-    Retrieves relevant document chunks for a given query.
-    Uses retriever.get_relevant_documents(query) from LangChain, which returns a list of Documents.
-    Then applies sentence-level filtering to highlight query-related sentences.
+    Get the most relevant context for a query using hybrid search and re-ranking.
     """
-    docs = retriever.invoke(query) if retriever else []
+    try:
+        if not retriever:
+            return "❌ Retrieval Failed: No retriever available."
 
-    # If no results, return a default message instead of "retrieval failed"
-    if not docs:
-        return "No strong matches found in the knowledge base, but here's a general response."
+        # Enhance the query for better retrieval
+        enhanced_query = enhance_query(query)
+        print(f"Enhanced query: {enhanced_query}")
 
-    # **If one document is a near-perfect match, prioritize only that one**
-    if len(docs) > 0 and query.lower() in docs[0].metadata.get("source", "").lower():
-        docs = [docs[0]]  # Keep only the best match
+        # Detect query intent and type
+        query_lower = query.lower()
+        is_code_query = any(keyword in query_lower for keyword in ['function', 'class', 'method', 'code', 'implementation'])
+        is_file_query = any(ext in query_lower for ext in ['.py', '.md', '.txt', '.json', '.yaml', '.yml'])
+        is_directory_query = any(keyword in query_lower for keyword in ['directory', 'folder', 'structure', 'organization'])
 
-    if not docs:
-        return "No relevant documents found."
+        # Smart Retrieval Decisions
+        if is_code_query:
+            # Focus on code-related documents and functions
+            search_kwargs = {"filter": {"type": ["python_function", "python_class", "python_summary"]}}
+        elif is_file_query:
+            # Focus on specific files
+            search_kwargs = {"filter": {"type": ["text", "model_file"]}}
+        elif is_directory_query:
+            # Focus on directory structure
+            search_kwargs = {"filter": {"type": ["text"]}}
+        else:
+            # Default: no specific filter
+            search_kwargs = {}
+        
+        # Dynamic k value based on query length
+        query_length = len(query.split())
+        if query_length <= 10:
+            k = 5  # Short queries: retrieve fewer documents
+        elif query_length <= 25:
+            k = 7  # Medium queries: retrieve a moderate number of documents
+        else:
+            k = 10  # Long queries: retrieve more documents
+        
+        # Get documents from retriever (semantic search)
+        docs = retriever.invoke(enhanced_query, **search_kwargs, k=k)
 
-    extracted_texts = []
-    for doc in docs:
-        text = doc.page_content.strip()
-        sentences = text.split(". ")
+        if not docs:
+            return "No relevant information found."
 
-        # Prioritize sentences containing the query
-        relevant_sentences = [s for s in sentences if query.lower() in s.lower()]
+        # Re-ranking: Hybrid search with BM25 for lexical matching
+        corpus = [doc.page_content for doc in docs]
+        bm25 = BM25Okapi([text.lower().split() for text in corpus])
+        bm25_scores = bm25.get_scores(enhanced_query.lower().split())
 
-        # If too few, expand around those sentences
-        if len(relevant_sentences) < 10:  # Increase threshold for better context
-            idx = [i for i, s in enumerate(sentences) if query.lower() in s.lower()]
-            for i in idx:
-                start = max(0, i - 5)  # Pull 5 sentences before
-                end = min(len(sentences), i + 6)  # Pull 6 sentences after
-                relevant_sentences.extend(sentences[start:end])
+        # Normalize BM25 scores to 0-1 range
+        max_bm25 = max(bm25_scores) if max(bm25_scores) > 0 else 1.0
+        normalized_bm25 = [score / max_bm25 for score in bm25_scores]
 
-        # Remove duplicates
-        relevant_sentences = list(dict.fromkeys(relevant_sentences))
+        # Combine scores: 0.7 * semantic + 0.3 * BM25
+        combined_scores = []
+        for i, doc in enumerate(docs):
+            semantic_score = 1.0 - (i / len(docs))  # Approximate semantic score based on position
+            combined_score = (0.7 * semantic_score) + (0.3 * normalized_bm25[i])
+            combined_scores.append((doc, combined_score))
 
-        extracted_text = ". ".join(relevant_sentences) + "..."
-        if not extracted_texts:  # Add the document header only once
-            extracted_texts.append(f"## {doc.metadata.get('source', 'Unknown File')}")
+        # Sort by combined score
+        reranked_docs = [doc for doc, _ in sorted(combined_scores, key=lambda x: x[1], reverse=True)]
 
-            extracted_texts.append(text)  # Append content without repeating the header
+        # Aggressive filtering: only keep documents with BM25 score > 0.1
+        filtered_docs = [doc for i, doc in enumerate(reranked_docs) if normalized_bm25[i] > 0.1]
 
-    return "\n".join(extracted_texts)
+        # Format context from documents with improved structure
+        context_parts = []
+        seen_content = set()  # For deduplication
+
+        for doc in filtered_docs[:5]:  # Limit to top 5 results
+            # Skip duplicates
+            if doc.page_content in seen_content:
+                continue
+            seen_content.add(doc.page_content)
+
+            # Format with improved metadata awareness
+            source = doc.metadata.get("source", "Unknown")
+            filename = doc.metadata.get("filename", os.path.basename(source))
+            directory = doc.metadata.get("directory", os.path.dirname(source))
+            header = doc.metadata.get("closest_header", "")
+
+            # Create a well-structured context entry
+            context_entry = f"## {source}"
+            if header:
+                context_entry += f"\n{header}:"
+
+            context_entry += f"\n{doc.page_content}"
+            context_parts.append(context_entry)
+
+        return "\n\n".join(context_parts)
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return f"❌ Retrieval Failed: {str(e)}"
 
 if __name__ == "__main__":
     """

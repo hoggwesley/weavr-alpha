@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "embedding_model": "BAAI/bge-large-en-v1.5",
+  "config_hash": "d098918a8200dfa69ed27596414908d5",
+  "indices": {
+    "C:\\Users\\hoggw\\Documents\\The Scriptorium\\The Quiet Room Where Dreams Go to Rot": {
+      "last_indexed": {
+        "C:\\Users\\hoggw\\Documents\\The Scriptorium\\The Quiet Room Where Dreams Go to Rot\\Alan Watts Voice Engine (Refined for Conversational Flow).md": 1739936348.539,
+        "C:\\Users\\hoggw\\Documents\\The Scriptorium\\The Quiet Room Where Dreams Go to Rot\\Backrooms Generation (Draft).md": 1739935778.711,
+        "C:\\Users\\hoggw\\Documents\\The Scriptorium\\The Quiet Room Where Dreams Go to Rot\\Button Logic and Triggers.md": 1739936787.38,
+        "C:\\Users\\hoggw\\Documents\\The Scriptorium\\The Quiet Room Where Dreams Go to Rot\\Emotional Data Tracker.md": 1739935375.525,
+        "C:\\Users\\hoggw\\Documents\\The Scriptorium\\The Quiet Room Where Dreams Go to Rot\\Game Flow Manager (Updated with Progress Tracking and Pacing Logic).md": 1739936006.927,
+        "C:\\Users\\hoggw\\Documents\\The Scriptorium\\The Quiet Room Where Dreams Go to Rot\\GPT Instructions for The Quiet Room Where Dreams Go to Rot.md": 1739936824.551,
+        "C:\\Users\\hoggw\\Documents\\The Scriptorium\\The Quiet Room Where Dreams Go to Rot\\Hallucination Logic (Updated for Dynamic Generation and Emotional Integration).md": 1739935835.031,
+        "C:\\Users\\hoggw\\Documents\\The Scriptorium\\The Quiet Room Where Dreams Go to Rot\\Pacing Logic and Progress Tracker.md": 1739936563.501,
+        "C:\\Users\\hoggw\\Documents\\The Scriptorium\\The Quiet Room Where Dreams Go to Rot\\Puzzle Generator.md": 1739935556.766,
+        "C:\\Users\\hoggw\\Documents\\The Scriptorium\\The Quiet Room Where Dreams Go to Rot\\Python Mini-Game File (Updated Draft).md": 1739935958.434,
+        "C:\\Users\\hoggw\\Documents\\The Scriptorium\\The Quiet Room Where Dreams Go to Rot\\The Quiet Room Where Dreams Go to Die (Prompt V1).md": 1739933280.847,
+        "C:\\Users\\hoggw\\Documents\\The Scriptorium\\The Quiet Room Where Dreams Go to Rot\\The Voice Dialogue Engine (Refined for Dialogue-Driven Interaction).md": 1739935913.989
+      },
+      "document_count": 134,
+      "last_update": "2025-03-04T23:19:45.379900"
+    }
+  },
+  "last_cleanup": "2025-03-04T20:30:13.650647"
+}

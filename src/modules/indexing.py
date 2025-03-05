@@ -7,21 +7,99 @@ import numpy as np
 from langchain_community.vectorstores import FAISS
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.docstore.document import Document
+from typing import List
+import traceback
+import re
+
+from langchain_together import TogetherEmbeddings
+
+from modules.config_loader import load_api_key
+from modules.parsers.file_parser import parse_file
 
 def parse_markdown_file(filepath):
-    """Parses a Markdown file and extracts text."""
+    """Parses a Markdown file and extracts text with structure preserved."""
     try:
         with open(filepath, 'r', encoding='utf-8') as f:
             markdown_content = f.read()
         
+        # Extract headers and structure before converting to HTML
+        headers = extract_markdown_headers(markdown_content)
+        
         html = markdown.markdown(markdown_content)
         text = ''.join(BeautifulSoup(html, "html.parser").find_all(string=True))
-        return text
+        
+        return text, headers
     except Exception as e:
         print(f"⚠️ Error parsing {filepath}: {e}")
-        return ""
+        return "", []
 
-import os
+def extract_markdown_headers(markdown_content):
+    """Extract headers and their content from markdown text."""
+    header_pattern = re.compile(r'^(#{1,6})\s+(.+)$', re.MULTILINE)
+    headers = []
+    
+    for match in header_pattern.finditer(markdown_content):
+        level = len(match.group(1))
+        text = match.group(2)
+        position = match.start()
+        headers.append({
+            "level": level,
+            "text": text,
+            "position": position
+        })
+    
+    return headers
+
+def split_with_metadata(text, filepath, headers=None):
+    """Split text into chunks while preserving metadata about structure."""
+    # Initialize text splitter
+    text_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=1000,
+        chunk_overlap=200,
+        length_function=len,
+    )
+    
+    # Basic metadata
+    base_metadata = {
+        "source": filepath,
+        "filename": os.path.basename(filepath),
+        "directory": os.path.dirname(filepath),
+    }
+    
+    # Add file depth in directory structure
+    relative_path = os.path.normpath(filepath)
+    path_parts = relative_path.split(os.sep)
+    base_metadata["path_depth"] = len(path_parts)
+    
+    # Find closest header for each chunk
+    chunks = text_splitter.split_text(text)
+    docs = []
+    
+    for i, chunk in enumerate(chunks):
+        # Clone the base metadata
+        metadata = dict(base_metadata)
+        metadata["chunk_index"] = i
+        
+        # If we have headers, find the closest header to this chunk
+        if headers:
+            chunk_start_pos = text.find(chunk)
+            if chunk_start_pos >= 0:
+                # Find the closest header before this chunk
+                closest_header = None
+                for header in headers:
+                    if header["position"] < chunk_start_pos:
+                        if closest_header is None or header["position"] > closest_header["position"]:
+                            closest_header = header
+                
+                if closest_header:
+                    metadata["closest_header"] = closest_header["text"]
+                    metadata["header_level"] = closest_header["level"]
+        
+        # Add document to list
+        doc = {"content": chunk, "metadata": metadata}
+        docs.append(doc)
+    
+    return docs
 
 def get_modified_files(knowledge_base_dir, last_index_time):
     """Returns a list of modified files since last index time."""
@@ -34,121 +112,174 @@ def get_modified_files(knowledge_base_dir, last_index_time):
                     modified_files.append(full_path)
     return modified_files
 
-def load_documents(knowledge_base_dir, verbose=False):
-    """Loads and chunks Markdown files from the given directory."""
-    documents = []
-    processed_files = 0
-    error_files = 0
-    
-    if verbose:
-        print(f"📂 Checking for Markdown files in: {knowledge_base_dir}")
-
-    if not os.path.exists(knowledge_base_dir):
-        print("❌ ERROR: Knowledge base directory does not exist!")
+def load_document(file_path: str) -> List[dict]:
+    """Load a single document with appropriate parser and preserve structure."""
+    try:
+        print(f"Loading document: {file_path}")
+        
+        # Special handling for markdown files
+        if file_path.endswith('.md'):
+            text_content, headers = parse_markdown_file(file_path)
+            if not text_content:
+                return []
+                
+            return split_with_metadata(text_content, file_path, headers)
+        
+        # Parse other files based on their type
+        parsed_data = parse_file(file_path)
+        
+        if 'error' in parsed_data and parsed_data['error']:
+            print(f"Error parsing {file_path}: {parsed_data['error']}")
+            return []
+        
+        # Handle Python files specially
+        if parsed_data['type'] == 'python_file':
+            chunks = []
+            
+            # Add the summary as a chunk
+            chunks.append({
+                "content": parsed_data["summary"],
+                "metadata": {
+                    "source": file_path,
+                    "type": "python_summary"
+                }
+            })
+            
+            # Add function and class documentation as chunks
+            for func_name, func_details in parsed_data.get("functions", {}).items():
+                docstring = parsed_data.get("docstrings", {}).get(f"function:{func_name}")
+                function_content = f"Function: {func_name}\n"
+                function_content += f"Arguments: {', '.join(func_details.get('arguments', []))}\n"
+                if docstring:
+                    function_content += f"Docstring: {docstring}"
+                
+                chunks.append({
+                    "content": function_content,
+                    "metadata": {
+                        "source": file_path,
+                        "type": "python_function",
+                        "name": func_name
+                    }
+                })
+            
+            for class_name, class_details in parsed_data.get("classes", {}).items():
+                class_content = f"Class: {class_name}\n"
+                if class_details.get("bases"):
+                    class_content += f"Inherits from: {', '.join(class_details['bases'])}\n"
+                
+                docstring = parsed_data.get("docstrings", {}).get(f"class:{class_name}")
+                if docstring:
+                    class_content += f"Docstring: {docstring}\n"
+                
+                if class_details.get("methods"):
+                    class_content += f"Methods: {', '.join(class_details['methods'])}"
+                
+                chunks.append({
+                    "content": class_content,
+                    "metadata": {
+                        "source": file_path,
+                        "type": "python_class",
+                        "name": class_name
+                    }
+                })
+                
+                # Add method docs
+                for method in class_details.get("methods", []):
+                    method_docstring = parsed_data.get("docstrings", {}).get(f"method:{class_name}.{method}")
+                    if method_docstring:
+                        chunks.append({
+                            "content": f"Method: {class_name}.{method}\nDocstring: {method_docstring}",
+                            "metadata": {
+                                "source": file_path,
+                                "type": "python_method",
+                                "name": f"{class_name}.{method}"
+                            }
+                        })
+            
+            return chunks
+        else:
+            # For other file types, use text splitter
+            text_splitter = RecursiveCharacterTextSplitter(
+                chunk_size=1000,
+                chunk_overlap=200,
+                length_function=len,
+            )
+            
+            chunks = text_splitter.create_documents(
+                [parsed_data.get("content", "")], 
+                metadatas=[{"source": file_path}]
+            )
+            
+            return [{"content": chunk.page_content, "metadata": chunk.metadata} for chunk in chunks]
+    except Exception as e:
+        print(f"Error loading document {file_path}: {str(e)}")
+        traceback.print_exc()
         return []
 
-    from langchain.text_splitter import RecursiveCharacterTextSplitter
-
-    class CustomSplitter(RecursiveCharacterTextSplitter):
-        """Custom text splitter that stops at section breaks (---)."""
-
-        def split_text(self, text):
-            sections = text.split("\n---\n")  # Split at section breaks
-            final_chunks = []
-            for section in sections:
-                chunks = super().split_text(section.strip())  # Use normal chunking within sections
-                final_chunks.extend(chunks)
-            return final_chunks
-
-    chunk_size = 2000
-    chunk_overlap = 200
-    splitter = CustomSplitter(chunk_size=chunk_size, chunk_overlap=chunk_overlap)
-
-    # Get all files first, then process them
-    all_files = []
-    for root, _, files in os.walk(knowledge_base_dir):
+def load_documents(directory_path: str) -> List[dict]:
+    """Load all documents from a directory recursively"""
+    documents = []
+    
+    # Skip directories and file patterns
+    skip_dirs = ['venv', '__pycache__', '.git', 'node_modules', '.pytest_cache']
+    skip_extensions = ['.pyc', '.pyd', '.dll', '.so', '.dylib', '.exe', '.bin', '.dat', '.pkl', '.h5', '.pth']
+    
+    print(f"Scanning directory: {directory_path}")
+    
+    for root, dirs, files in os.walk(directory_path):
+        # Skip directories in skip_dirs
+        dirs[:] = [d for d in dirs if d not in skip_dirs]
+        
+        # Process each file
         for file in files:
-            if file.endswith(".md"):
-                all_files.append(os.path.join(root, file))
-    
-    if verbose:
-        print(f"📂 Found {len(all_files)} Markdown files")
-    
-    # Process each file
-    for filepath in all_files:
-        try:
-            text_content = parse_markdown_file(filepath)
-            if not text_content:
+            if file.startswith('.'):  # Skip hidden files
                 continue
                 
-            if verbose and processed_files < 5:
-                print(f"✅ Loaded: {os.path.basename(filepath)} ({len(text_content)} characters)")
-
-            chunks = splitter.split_text(text_content)
-            for chunk in chunks:
-                documents.append(Document(
-                    page_content=chunk, 
-                    metadata={"source": os.path.basename(filepath)}
-                ))
+            # Skip files with extensions in skip_extensions
+            if any(file.endswith(ext) for ext in skip_extensions):
+                continue
+                
+            file_path = os.path.join(root, file)
             
-            processed_files += 1
-            
-        except Exception as e:
-            error_files += 1
-            if verbose or error_files < 5:  # Show first few errors
-                print(f"⚠️ Error processing {os.path.basename(filepath)}: {e}")
-
-    if verbose:
-        print(f"🔍 Processed {processed_files} files with {error_files} errors")
-        print(f"🔍 Total chunks created: {len(documents)}")
+            try:
+                doc_chunks = load_document(file_path)
+                documents.extend(doc_chunks)
+                if doc_chunks:
+                    print(f"✓ Added {len(doc_chunks)} chunks from {file_path}")
+                else:
+                    print(f"✗ No chunks added from {file_path}")
+            except Exception as e:
+                print(f"✗ Error processing {file_path}: {str(e)}")
     
+    print(f"📄 Total document chunks loaded: {len(documents)}")
     return documents
 
-def load_or_create_faiss(chunks, embedding_model, verbose=False):
-    """
-    Creates or loads a FAISS index with proper LangChain compatibility.
-    Returns a LangChain FAISS store that supports .as_retriever().
-    """
-    # Handle empty chunk scenario
-    if not chunks:
-        if verbose:
-            print("⚠️ No document chunks provided. Returning an empty FAISS store.")
-        return FAISS.from_texts(
-            ["Placeholder document"], 
-            embedding_model, 
-            metadatas=[{"source": "Placeholder"}]
-        )
-
-    # Prepare texts and metadata
-    texts = [chunk.page_content for chunk in chunks]
-    metadatas = [chunk.metadata for chunk in chunks]
-    
-    # Generate embeddings
-    embeddings = embedding_model.embed_documents(texts)
-    
-    # Create FAISS store using LangChain's API
-    store = FAISS.from_embeddings(
-        text_embeddings=list(zip(texts, embeddings)),
-        embedding=embedding_model,
-        metadatas=metadatas
-    )
-    
-    # Save the index to a directory (not a file)
-    index_dir = "data/faiss_index_store"
-    
-    # Make sure we're using a directory path, not a file path
-    if os.path.exists(index_dir) and not os.path.isdir(index_dir):
-        # If it exists but is a file, use a different path
-        os.remove(index_dir)  # Remove the file
-    
-    # Create directory if it doesn't exist
-    os.makedirs(index_dir, exist_ok=True)
-    
+def load_or_create_faiss(documents: List[dict], embedding_model):
+    """Load or create FAISS index from documents"""
     try:
-        store.save_local(index_dir)
-        if verbose:
-            print(f"✅ FAISS store saved to {index_dir}")
+        if not documents:
+            print("No documents provided for indexing.")
+            return None
+        
+        print(f"Creating FAISS index from {len(documents)} document chunks...")
+        
+        # Convert document format to what FAISS expects
+        langchain_docs = []
+        for doc in documents:
+            langchain_docs.append(
+                Document(
+                    page_content=doc["content"],
+                    metadata=doc["metadata"]
+                )
+            )
+        
+        # Create FAISS index
+        vectorstore = FAISS.from_documents(langchain_docs, embedding_model)
+        
+        print("FAISS index created successfully.")
+        return vectorstore
+        
     except Exception as e:
-        print(f"❌ ERROR saving FAISS store: {e}")
-    
-    return store
+        print(f"Error creating FAISS index: {str(e)}")
+        traceback.print_exc()
+        return None

@@ -4,6 +4,8 @@ import argparse
 import json
 import re  # Add missing import for regex operations
 import traceback  # For detailed error tracking
+import shutil
+import threading
 
 # ✅ Ensure Python finds 'modules/'
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -13,6 +15,7 @@ sys.path.append(PROJECT_ROOT)
 from modules.config_loader import load_api_key, get_model_name, set_model_name, get_model_api_name, load_config
 from modules.retrieval import get_context
 from modules.generation import query_together
+from modules.file_change_handler import start_observer, stop_observer
 
 # Enable debugging - commented out for production
 DEBUG_MODE = False  # Change to True for debugging
@@ -38,6 +41,8 @@ IS_TUI_MODE = not sys.stdin.isatty()
 # ✅ Set Retrieval Mode
 USE_RAG = args.rag
 retriever = None
+observer = None
+reindex_flag = threading.Event()
 
 if USE_RAG:
     if IS_TUI_MODE:
@@ -49,20 +54,25 @@ if USE_RAG:
     if knowledge_base_dir and os.path.exists(knowledge_base_dir) and os.path.isdir(knowledge_base_dir):
         print(f"✅ Using knowledge directory: {knowledge_base_dir}")
 
-        # Initialize the retriever (FAISS)
-        from modules.indexing import load_documents, load_or_create_faiss
-        from langchain_together import TogetherEmbeddings
+        # Initialize the retriever with persistent indexing
+        from modules.persistent_indexing import get_or_create_persistent_index
+        from modules.retrieval import get_faiss_retriever
 
-        documents = load_documents(knowledge_base_dir)  # Load documents and chunk them
-        embedding_model = TogetherEmbeddings(model="togethercomputer/m2-bert-80M-8k-retrieval", api_key=load_api_key())
-        retriever = load_or_create_faiss(documents, embedding_model)
+        try:
+            # Get or create persistent index
+            vectorstore = get_or_create_persistent_index(knowledge_base_dir)
 
-        if retriever is None:
-            print("❌ FAISS failed to load. Retrieval will not work.")
-        else:
-            print("✅ FAISS Index Loaded Successfully!")
-
-        retriever = retriever.as_retriever(search_kwargs={"k": 5})
+            if vectorstore is None:
+                print("❌ FAISS failed to load. Retrieval will not work.")
+                USE_RAG = False
+            else:
+                print("✅ FAISS Index Loaded Successfully!")
+                retriever = get_faiss_retriever(vectorstore)
+                observer = start_observer(knowledge_base_dir, reindex_flag)
+        except Exception as e:
+            print(f"❌ Error initializing RAG: {str(e)}")
+            traceback.print_exc()
+            USE_RAG = False
 
     else:
         print("⚠️ No valid directory provided. Running AI without document retrieval.")
@@ -79,6 +89,7 @@ if not IS_TUI_MODE:
     print(" - `/model` : Switch AI models (by number)")
     print(" - `/rag` : Toggle Retrieval-Augmented Generation (RAG)")
     print(" - `/cot` : Toggle Chain-of-Thought reasoning")
+    print(" - `/clearindex` : Clear the existing index to force re-indexing")
     print(" - Any other text: Send a query to AI\n")
 
 # ✅ Main Loop for AI Interaction
@@ -103,6 +114,44 @@ while True:
             print("Exiting Weavr AI...")
             break
 
+        elif query.lower() == "/clearindex":
+            # Clear the existing index
+            from modules.persistent_indexing import PersistentIndexManager
+            
+            # Initialize the index manager
+            manager = PersistentIndexManager()
+            
+            # Get the index directory
+            index_dir = manager.index_dir
+            
+            try:
+                # Remove the index directory
+                shutil.rmtree(index_dir)
+                
+                # Recreate the index directory
+                os.makedirs(index_dir, exist_ok=True)
+                
+                # Clear the index manifest
+                manager.manifest["indices"] = {}
+                manager._save_manifest()
+                
+                print(f"✅ Successfully cleared the index at {index_dir}")
+                
+                # Reset knowledge_base_dir and retriever, disable RAG
+                knowledge_base_dir = None
+                retriever = None
+                USE_RAG = False
+                print("🔄 RAG has been disabled. Please re-enable RAG to re-index the knowledge base.")
+                
+                # Stop the observer if running
+                if observer:
+                    stop_observer(observer)
+                    observer = None
+                
+            except Exception as e:
+                print(f"❌ Error clearing index: {str(e)}")
+                traceback.print_exc()
+
         elif query.lower() == "/model":
             # ✅ Show numbered list of available models
             config = load_config()
@@ -120,7 +169,7 @@ while True:
                 print(f"✅ Model switched to {models[new_index][1]} ({new_model_key})")
 
         elif query.lower() == "/rag":
-            # ✅ Toggle Retrieval Mode
+            # Toggle Retrieval Mode
             USE_RAG = not USE_RAG
             status = "ENABLED" if USE_RAG else "DISABLED"
 
@@ -134,13 +183,25 @@ while True:
                 else:
                     print(f"✅ Using knowledge directory, please wait...")
 
-                    # ✅ Initialize RAG components
-                    from modules.indexing import load_documents, load_or_create_faiss
-                    from langchain_together import TogetherEmbeddings
+                    # Initialize the retriever with persistent indexing
+                    from modules.persistent_indexing import get_or_create_persistent_index
+                    from modules.retrieval import get_faiss_retriever
 
-                    documents = load_documents(knowledge_base_dir)
-                    embedding_model = TogetherEmbeddings(model="togethercomputer/m2-bert-80M-8k-retrieval", api_key=load_api_key())
-                    retriever = load_or_create_faiss(documents, embedding_model).as_retriever(search_kwargs={"k": 5})
+                    try:
+                        # Get or create persistent index
+                        vectorstore = get_or_create_persistent_index(knowledge_base_dir)
+                        
+                        if vectorstore is None:
+                            print("❌ FAISS failed to load. Retrieval will not work.")
+                            USE_RAG = False
+                        else:
+                            print("✅ FAISS Index Loaded Successfully!")
+                            retriever = get_faiss_retriever(vectorstore)
+                            observer = start_observer(knowledge_base_dir, reindex_flag)
+                    except Exception as e:
+                        print(f"❌ Error initializing RAG: {str(e)}")
+                        traceback.print_exc()
+                        USE_RAG = False
 
             if IS_TUI_MODE:
                 print(json.dumps({"type": "rag", "status": status}))
@@ -149,7 +210,6 @@ while True:
                 print(f"🔄 RAG Mode {status}")
 
         elif query.lower().startswith("/cot"):
-            # debug_print("CoT command detected")
             parts = query.split()
             if len(parts) == 1:
                 # Toggle between disabled and default CoT
@@ -161,23 +221,39 @@ while True:
                 cot_mode = parts[1]
                 USE_COT = True
                 print(f"🔄 Chain-of-Thought (CoT) Reasoning ENABLED (Mode: {cot_mode})")
-            
-            # debug_print(f"CoT status is now: {USE_COT}")
 
         else:
-            # Retrieve context if RAG is enabled
-            if USE_RAG and retriever:
-                context = get_context(query, retriever)
-                if "❌ Retrieval Failed" in context or not context.strip():
-                    print("❌ FAISS retrieval failed. AI is generating a response without knowledge base data.")
-                    context = "No relevant retrieval data available."
-                else:
-                    print("✅ Retrieved Context:\n", context)
-            else:
-                context = "No relevant retrieval data available."
+            # Check if reindexing is needed
+            if reindex_flag.is_set():
+                print("🔄 Reindexing due to file changes...")
+                from modules.persistent_indexing import get_or_create_persistent_index
+                from modules.retrieval import get_faiss_retriever
 
-            # debug_print(f"Calling query_together with task_type: {'cot' if USE_COT else 'default'}")
-            
+                try:
+                    vectorstore = get_or_create_persistent_index(knowledge_base_dir, force_rebuild=True)
+                    if vectorstore is None:
+                        print("❌ FAISS failed to load. Retrieval will not work.")
+                        context = "No relevant retrieval data available."
+                    else:
+                        retriever = get_faiss_retriever(vectorstore)
+                        context = get_context(query, retriever)  # Get context after re-initialization
+                        reindex_flag.clear()  # Clear the flag after reindexing
+                except Exception as e:
+                    print(f"❌ Error reindexing: {str(e)}")
+                    traceback.print_exc()
+                    context = "No relevant retrieval data available."
+            else:
+                # Retrieve context if RAG is enabled
+                if USE_RAG and retriever:
+                    context = get_context(query, retriever)
+                    if "❌ Retrieval Failed" in context or not context.strip():
+                        print("❌ FAISS retrieval failed. AI is generating a response without knowledge base data.")
+                        context = "No relevant retrieval data available."
+                    else:
+                        print("✅ Retrieved Context:\n", context)
+                else:
+                    context = "No relevant retrieval data available"
+
             try:
                 # Generate response with or without CoT
                 response, token_count, reasoning_steps = query_together(
@@ -185,8 +261,6 @@ while True:
                     context, 
                     task_type="cot" if USE_COT else "default"
                 )
-                
-                # debug_print(f"Got response with {len(reasoning_steps)} reasoning steps")
                 
                 # Print CoT reasoning steps if available
                 if USE_COT and reasoning_steps:
@@ -213,8 +287,6 @@ while True:
                 print(f"\n🪙 Tokens Used: {token_count}")
 
             except Exception as query_error:
-                # debug_print(f"Error during query_together: {str(query_error)}")
-                # debug_print(traceback.format_exc())
                 print(f"❌ Error: {str(query_error)}")
                 continue
 
@@ -222,8 +294,6 @@ while True:
         print("❌ TUI connection closed. Exiting Weavr AI...")
         break
     except Exception as e:
-        # debug_print(f"Critical error: {str(e)}")
-        # debug_print(traceback.format_exc())
         if IS_TUI_MODE:
             print(json.dumps({"type": "error", "message": str(e)}))
             sys.stdout.flush()
@@ -232,3 +302,7 @@ while True:
             print("💡 For more details, try running with the --debug flag")
 
 print("Script Complete")
+
+# Stop the observer if running
+if observer:
+    stop_observer(observer)

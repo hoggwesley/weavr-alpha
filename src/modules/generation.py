@@ -84,6 +84,12 @@ def query_together(query, context="", task_type="default", cot_mode="default"):
 
 You are now the reasoning engine for Weavr AI. Your task is to provide clear analysis points.
 
+When analyzing questions about code, files, or directories:
+1. Note the specific files or directories mentioned
+2. Consider the structure and organization of the codebase
+3. Think about how different components interact
+4. Consider the most relevant sections based on the headers
+
 You MUST respond using a numbered list format:
 1. First key insight about the topic
 2. Second key insight about the topic
@@ -111,25 +117,24 @@ Analyze this query step by step: {query}
             synthesis_prompt = f"""<s>[INST] <<SYS>>
 {system_prompt}
 
-You are the main response engine for Weavr AI. Your task is to create a comprehensive, well-written response.
+You are the main response engine for Weavr AI, a precise knowledge assistant. Focus exclusively on information available in the knowledge base provided below, avoiding all outside knowledge.
 
-I'll provide you with reasoning points from our analysis engine. DO NOT repeat these points verbatim or summarize them.
-Instead, use them as a foundation to craft an original, coherent, and insightful response that expands on these ideas.
+KNOWLEDGE BASE INFORMATION:
+{context}
 
-The response should:
-- Be written as 2-3 cohesive paragraphs
-- Provide deeper insights than the initial reasoning points
-- Present a thoughtful, nuanced perspective
-- Avoid explicitly mentioning "steps" or "reasoning points"
-- Sound natural and conversational, not like a summary
+RULES:
+1. ONLY use information from the knowledge base above.
+2. NEVER introduce facts not present in the knowledge base.
+3. If the knowledge base doesn't have relevant information, say "I don't have specific information about that in my knowledge base."
+4. DO NOT mention the knowledge base or cite sources in your answer.
+5. Structure your answer clearly and concisely.
 
-Here are the reasoning points:
-{chr(10).join([re.sub(r'^Step \d+:\s*', '', step) for step in reasoning_steps])}
+Question: {query}
 <</SYS>>
 
-Based on these insights, provide a comprehensive and well-structured response to the original question.
+The user asked: "{query}"
 
-Original question: {query}
+Please answer based solely on the information available in the knowledge base.
 [/INST]"""
 
             # debug_print(f"Synthesis prompt: {synthesis_prompt[:200]}...")
@@ -158,7 +163,28 @@ Original question: {query}
         
         else:
             # Non-CoT response
-            prompt = f"<s>[INST] {system_prompt}\nUser: {query} [/INST]"
+            prompt = f"""<s>[INST] <<SYS>>
+{system_prompt}
+
+You are the main response engine for Weavr AI, a precise knowledge assistant. Focus exclusively on information available in the knowledge base provided below, avoiding all outside knowledge.
+
+KNOWLEDGE BASE INFORMATION:
+{context}
+
+RULES:
+1. ONLY use information from the knowledge base above.
+2. NEVER introduce facts not present in the knowledge base.
+3. If the knowledge base doesn't have relevant information, say "I don't have specific information about that in my knowledge base."
+4. DO NOT mention the knowledge base or cite sources in your answer.
+5. Structure your answer clearly and concisely.
+
+Question: {query}
+<</SYS>>
+
+The user asked: "{query}"
+
+Please answer based solely on the information available in the knowledge base.
+[/INST]"""
             response_text, token_count = model_module.generate_response(prompt)
             return response_text, token_count, []
         

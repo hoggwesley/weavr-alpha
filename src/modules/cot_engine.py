@@ -3,8 +3,8 @@ import traceback
 
 from modules.config_loader import get_model_name, get_model_api_name
 
-# Enable debugging
-DEBUG_MODE = True
+# Enable debugging - commented out for production
+DEBUG_MODE = False  # Change to True for debugging
 
 def debug_print(message):
     """Print debug information when debug mode is enabled"""
@@ -74,7 +74,7 @@ You MUST respond using the following format:
 
         # Clean the response before parsing
         cleaned_response = self.clean_response(response_text)
-        debug_print(f"Cleaned response: {cleaned_response[:100]}...")
+        # debug_print(f"Cleaned response: {cleaned_response[:100]}...")
         
         # Check for numbered list format (1. 2. 3. etc)
         number_pattern = re.compile(r"(?:^|\n)([0-9]+)[\.\):][ \t]*([^\n]*(?:\n(?![0-9]+[\.\):]|===\s*ANSWER\s*===)[^\n]*)*)", re.MULTILINE)
@@ -82,12 +82,12 @@ You MUST respond using the following format:
         
         # If numbered format is found, convert to Step format
         if numbered_steps:
-            debug_print(f"Found {len(numbered_steps)} numbered steps")
+            # debug_print(f"Found {len(numbered_steps)} numbered steps")
             for step_num, step_text in numbered_steps:
                 # Keep the step number but ensure consistent formatting
                 step_content = f"Step {step_num}: {step_text.strip()}"
                 reasoning_steps.append(step_content)
-                debug_print(f"Added numbered step {step_num}")
+                # debug_print(f"Added numbered step {step_num}")
         else:
             # Try finding step format
             step_pattern = re.compile(
@@ -97,27 +97,27 @@ You MUST respond using the following format:
             steps = [(m.group(1), m.group(2).strip()) for m in step_pattern.finditer(cleaned_response)]
             
             if steps:
-                debug_print(f"Found {len(steps)} steps with 'Step X:' format")
+                # debug_print(f"Found {len(steps)} steps with 'Step X:' format")
                 for step_num, step_text in steps:
                     step_content = f"Step {step_num}: {step_text}"
                     reasoning_steps.append(step_content)
-                    debug_print(f"Added step {step_num}")
+                    # debug_print(f"Added step {step_num}")
 
         # Extract answer with different patterns
         if not final_answer:  # Only search if we don't already have an answer
             match_answer = self.answer_pattern.search(cleaned_response)
             if match_answer:
-                debug_print("Found answer with '=== ANSWER ===' delimiter")
+                # debug_print("Found answer with '=== ANSWER ===' delimiter")
                 final_answer = match_answer.group(1).strip()
             else:
                 # Try alternative patterns
                 alt_match = self.alternative_answer_pattern.search(cleaned_response)
                 if alt_match:
-                    debug_print("Found answer with alternative delimiter")
+                    # debug_print("Found answer with alternative delimiter")
                     final_answer = alt_match.group(1).strip()
                 elif reasoning_steps:
                     # If we have steps but no explicit answer, use text after last step
-                    debug_print("No answer delimiter found, using text after last step")
+                    # debug_print("No answer delimiter found, using text after last step")
                     parts = cleaned_response.split(reasoning_steps[-1].strip(), 1)
                     if len(parts) > 1 and len(parts[1].strip()) > 50:
                         final_answer = parts[1].strip()
@@ -126,12 +126,12 @@ You MUST respond using the following format:
                         final_answer = f"Based on the analysis, {parts[1].strip() if len(parts) > 1 else 'no clear conclusion could be reached.'}"
                 else:
                     # No steps and no explicit answer - use the whole response
-                    debug_print("No steps or answer delimiter found, using entire response")
+                    # debug_print("No steps or answer delimiter found, using entire response")
                     final_answer = cleaned_response
 
         # If no steps found but answer exists, create dummy step
         if not reasoning_steps and final_answer:
-            debug_print("Creating dummy reasoning step from answer")
+            # debug_print("Creating dummy reasoning step from answer")
             reasoning_steps = ["Step 1: Initial analysis - The question requires examining key aspects and relationships."]
 
         return reasoning_steps, final_answer

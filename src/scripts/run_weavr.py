@@ -14,8 +14,8 @@ from modules.config_loader import load_api_key, get_model_name, set_model_name, 
 from modules.retrieval import get_context
 from modules.generation import query_together
 
-# Enable debugging
-DEBUG_MODE = True
+# Enable debugging - commented out for production
+DEBUG_MODE = False  # Change to True for debugging
 
 def debug_print(message):
     """Print debug information when debug mode is enabled"""
@@ -149,7 +149,7 @@ while True:
                 print(f"🔄 RAG Mode {status}")
 
         elif query.lower().startswith("/cot"):
-            debug_print("CoT command detected")
+            # debug_print("CoT command detected")
             parts = query.split()
             if len(parts) == 1:
                 # Toggle between disabled and default CoT
@@ -162,7 +162,7 @@ while True:
                 USE_COT = True
                 print(f"🔄 Chain-of-Thought (CoT) Reasoning ENABLED (Mode: {cot_mode})")
             
-            debug_print(f"CoT status is now: {USE_COT}")
+            # debug_print(f"CoT status is now: {USE_COT}")
 
         else:
             # Retrieve context if RAG is enabled
@@ -176,7 +176,7 @@ while True:
             else:
                 context = "No relevant retrieval data available."
 
-            debug_print(f"Calling query_together with task_type: {'cot' if USE_COT else 'default'}")
+            # debug_print(f"Calling query_together with task_type: {'cot' if USE_COT else 'default'}")
             
             try:
                 # Generate response with or without CoT
@@ -186,7 +186,7 @@ while True:
                     task_type="cot" if USE_COT else "default"
                 )
                 
-                debug_print(f"Got response with {len(reasoning_steps)} reasoning steps")
+                # debug_print(f"Got response with {len(reasoning_steps)} reasoning steps")
                 
                 # Print CoT reasoning steps if available
                 if USE_COT and reasoning_steps:
@@ -213,8 +213,8 @@ while True:
                 print(f"\n🪙 Tokens Used: {token_count}")
 
             except Exception as query_error:
-                debug_print(f"Error during query_together: {str(query_error)}")
-                debug_print(traceback.format_exc())
+                # debug_print(f"Error during query_together: {str(query_error)}")
+                # debug_print(traceback.format_exc())
                 print(f"❌ Error: {str(query_error)}")
                 continue
 
@@ -222,8 +222,8 @@ while True:
         print("❌ TUI connection closed. Exiting Weavr AI...")
         break
     except Exception as e:
-        debug_print(f"Critical error: {str(e)}")
-        debug_print(traceback.format_exc())
+        # debug_print(f"Critical error: {str(e)}")
+        # debug_print(traceback.format_exc())
         if IS_TUI_MODE:
             print(json.dumps({"type": "error", "message": str(e)}))
             sys.stdout.flush()

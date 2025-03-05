@@ -12,8 +12,8 @@ import tiktoken
 import re
 import traceback  # For more detailed error logging
 
-# Enable debugging
-DEBUG_MODE = True
+# Enable debugging - commented out for production
+DEBUG_MODE = False  # Change to True for debugging
 
 def debug_print(message):
     """Print debug information when debug mode is enabled"""
@@ -41,7 +41,7 @@ def query_together(query, context="", task_type="default", cot_mode="default"):
     """Routes AI requests while ensuring clean response formatting."""
     print("✅ query_together CALLED")
     try:
-        debug_print(f"query_together called with task_type={task_type}, cot_mode={cot_mode}")
+        # debug_print(f"query_together called with task_type={task_type}, cot_mode={cot_mode}")
         
         model_key = get_model_name()  
         model_name = get_model_api_name()
@@ -50,7 +50,7 @@ def query_together(query, context="", task_type="default", cot_mode="default"):
             raise ValueError(f"ERROR: Model '{model_key}' is not found in config.yaml!")
 
         module_name = f"modules.models.{model_key}"  # ✅ Correct path
-        debug_print(f"Loading model module: {module_name}")
+        # debug_print(f"Loading model module: {module_name}")
 
         try:
             model_module = importlib.import_module(module_name)
@@ -68,14 +68,14 @@ def query_together(query, context="", task_type="default", cot_mode="default"):
 
         # ✅ Get AI response (with optional CoT reasoning)
         if task_type == "cot":
-            debug_print("Generating CoT reasoning steps")
+            # debug_print("Generating CoT reasoning steps")
 
             # EXPERIMENT: Use Mistral-7B for reasoning steps
             try:
                 reasoning_module = importlib.import_module("modules.models.mistral_7b_v01")
-                debug_print("Using Mistral-7B for reasoning steps")
+                # debug_print("Using Mistral-7B for reasoning steps")
             except ModuleNotFoundError:
-                debug_print("Mistral-7B model not found, falling back to selected model")
+                # debug_print("Mistral-7B model not found, falling back to selected model")
                 reasoning_module = model_module
 
             # First API call: Generate reasoning steps with Mistral-7B
@@ -98,14 +98,14 @@ Analyze this query step by step: {query}
 {context if context else ""}
 [/INST]"""
 
-            debug_print(f"Reasoning prompt: {reasoning_prompt[:200]}...")
-            debug_print("Calling generate_response for reasoning steps using Mistral-7B")
+            # debug_print(f"Reasoning prompt: {reasoning_prompt[:200]}...")
+            # debug_print("Calling generate_response for reasoning steps using Mistral-7B")
             reasoning_text, reasoning_token_count = reasoning_module.generate_response(reasoning_prompt)
-            debug_print(f"Raw reasoning text: {reasoning_text[:200]}...")
+            # debug_print(f"Raw reasoning text: {reasoning_text[:200]}...")
 
             # Extract reasoning steps
             reasoning_steps, _ = formatter.parse_response(reasoning_text)  # Use formatter to parse steps
-            debug_print(f"Extracted {len(reasoning_steps)} reasoning steps from Mistral-7B")
+            # debug_print(f"Extracted {len(reasoning_steps)} reasoning steps from Mistral-7B")
 
             # Second API call: Synthesize final answer with Mixtral-8x7B
             synthesis_prompt = f"""<s>[INST] <<SYS>>
@@ -132,14 +132,14 @@ Based on these insights, provide a comprehensive and well-structured response to
 Original question: {query}
 [/INST]"""
 
-            debug_print(f"Synthesis prompt: {synthesis_prompt[:200]}...")
-            debug_print("Calling generate_response for final answer using Mixtral-8x7B")
+            # debug_print(f"Synthesis prompt: {synthesis_prompt[:200]}...")
+            # debug_print("Calling generate_response for final answer using Mixtral-8x7B")
             final_answer_text, final_answer_token_count = model_module.generate_response(synthesis_prompt)
-            debug_print(f"Raw final answer from Mixtral-8x7B: {final_answer_text[:200]}...")
+            # debug_print(f"Raw final answer from Mixtral-8x7B: {final_answer_text[:200]}...")
             
             # Clean the final answer
             final_answer_text = final_answer_text.strip()
-            debug_print(f"Cleaned final answer: {final_answer_text[:100]}...")
+            # debug_print(f"Cleaned final answer: {final_answer_text[:100]}...")
 
             # Combine token counts
             token_count = reasoning_token_count + final_answer_token_count
@@ -163,8 +163,8 @@ Original question: {query}
             return response_text, token_count, []
         
     except Exception as e:
-        debug_print(f"Error in query_together: {str(e)}")
-        debug_print(traceback.format_exc())
+        # debug_print(f"Error in query_together: {str(e)}")
+        # debug_print(traceback.format_exc())
         return f"Error generating response: {str(e)}", 0, []
 
 if __name__ == "__main__":

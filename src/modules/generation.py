@@ -6,6 +6,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 from modules.config_loader import load_api_key, get_model_name, get_model_api_name, get_system_prompt
 from modules.cot_engine import MixtralCoTFormatter  # Updated import path
+from modules.user_instructions import load_instructions, get_combined_prompt
 
 import importlib
 import tiktoken
@@ -62,6 +63,10 @@ def query_together(query, context="", task_type="default", cot_mode="default"):
 
         # ✅ Enforce system prompt for stricter behavior
         system_prompt = get_system_prompt()
+        
+        # Load user instructions and combine with system prompt
+        user_instructions = load_instructions()
+        combined_prompt = get_combined_prompt(system_prompt, user_instructions)
 
         # Initialize CoT Engine
         formatter = MixtralCoTFormatter()
@@ -80,7 +85,7 @@ def query_together(query, context="", task_type="default", cot_mode="default"):
 
             # First API call: Generate reasoning steps with Mistral-7B
             reasoning_prompt = f"""<s>[INST] <<SYS>>
-{system_prompt}
+{combined_prompt}
 
 You are now the reasoning engine for Weavr AI. Your task is to provide clear analysis points.
 
@@ -115,7 +120,7 @@ Analyze this query step by step: {query}
 
             # Second API call: Synthesize final answer with Mixtral-8x7B
             synthesis_prompt = f"""<s>[INST] <<SYS>>
-{system_prompt}
+{combined_prompt}
 
 You are the main response engine for Weavr AI, a precise knowledge assistant. Focus exclusively on information available in the knowledge base provided below, avoiding all outside knowledge.
 
@@ -125,7 +130,7 @@ KNOWLEDGE BASE INFORMATION:
 RULES:
 1. ONLY use information from the knowledge base above.
 2. NEVER introduce facts not present in the knowledge base.
-3. If the knowledge base doesn't have relevant information, say "I don't have specific information about that in my knowledge base."
+3. If the knowledge base doesn't have relevant information in my knowledge base, say "I don't have specific information about that in my knowledge base."
 4. DO NOT mention the knowledge base or cite sources in your answer.
 5. Structure your answer clearly and concisely.
 
@@ -164,7 +169,7 @@ Please answer based solely on the information available in the knowledge base.
         else:
             # Non-CoT response
             prompt = f"""<s>[INST] <<SYS>>
-{system_prompt}
+{combined_prompt}
 
 You are the main response engine for Weavr AI, a precise knowledge assistant. Focus exclusively on information available in the knowledge base provided below, avoiding all outside knowledge.
 
@@ -174,7 +179,7 @@ KNOWLEDGE BASE INFORMATION:
 RULES:
 1. ONLY use information from the knowledge base above.
 2. NEVER introduce facts not present in the knowledge base.
-3. If the knowledge base doesn't have relevant information, say "I don't have specific information about that in my knowledge base."
+3. If the knowledge base doesn't have relevant information in my knowledge base, say "I don't have specific information about that in my knowledge base."
 4. DO NOT mention the knowledge base or cite sources in your answer.
 5. Structure your answer clearly and concisely.
 

@@ -4,6 +4,7 @@ import re
 from modules.query_enhancement import enhance_query
 from rank_bm25 import BM25Okapi
 import numpy as np
+from modules.hybrid_search import HybridSearcher, combine_search_results
 
 def get_faiss_retriever(index):
     """
@@ -19,101 +20,25 @@ def get_faiss_retriever(index):
 
 def get_context(query, retriever):
     """
-    Get the most relevant context for a query using hybrid search and re-ranking.
+    Retrieves context for a given query using a retriever.
+
+    Args:
+        query (str): The query to retrieve context for.
+        retriever: The retriever object to use for retrieving context.
+
+    Returns:
+        str: The retrieved context, or an error message if retrieval fails.
     """
     try:
-        if not retriever:
-            return "❌ Retrieval Failed: No retriever available."
-
-        # Enhance the query for better retrieval
-        enhanced_query = enhance_query(query)
-        print(f"Enhanced query: {enhanced_query}")
-
-        # Detect query intent and type
-        query_lower = query.lower()
-        is_code_query = any(keyword in query_lower for keyword in ['function', 'class', 'method', 'code', 'implementation'])
-        is_file_query = any(ext in query_lower for ext in ['.py', '.md', '.txt', '.json', '.yaml', '.yml'])
-        is_directory_query = any(keyword in query_lower for keyword in ['directory', 'folder', 'structure', 'organization'])
-
-        # Smart Retrieval Decisions
-        if is_code_query:
-            # Focus on code-related documents and functions
-            search_kwargs = {"filter": {"type": ["python_function", "python_class", "python_summary"]}}
-        elif is_file_query:
-            # Focus on specific files
-            search_kwargs = {"filter": {"type": ["text", "model_file"]}}
-        elif is_directory_query:
-            # Focus on directory structure
-            search_kwargs = {"filter": {"type": ["text"]}}
+        context = retriever.invoke(query)
+        context_str = "\n\n".join([doc.page_content for doc in context])
+        return context_str
+    except AttributeError as e:
+        if "'InMemoryDocstore' object has no attribute 'values'" in str(e):
+            return "❌ Retrieval Failed: The current index is not compatible with hybrid search. Please try a different index or disable hybrid search."
         else:
-            # Default: no specific filter
-            search_kwargs = {}
-        
-        # Dynamic k value based on query length
-        query_length = len(query.split())
-        if query_length <= 10:
-            k = 5  # Short queries: retrieve fewer documents
-        elif query_length <= 25:
-            k = 7  # Medium queries: retrieve a moderate number of documents
-        else:
-            k = 10  # Long queries: retrieve more documents
-        
-        # Get documents from retriever (semantic search)
-        docs = retriever.invoke(enhanced_query, **search_kwargs, k=k)
-
-        if not docs:
-            return "No relevant information found."
-
-        # Re-ranking: Hybrid search with BM25 for lexical matching
-        corpus = [doc.page_content for doc in docs]
-        bm25 = BM25Okapi([text.lower().split() for text in corpus])
-        bm25_scores = bm25.get_scores(enhanced_query.lower().split())
-
-        # Normalize BM25 scores to 0-1 range
-        max_bm25 = max(bm25_scores) if max(bm25_scores) > 0 else 1.0
-        normalized_bm25 = [score / max_bm25 for score in bm25_scores]
-
-        # Combine scores: 0.7 * semantic + 0.3 * BM25
-        combined_scores = []
-        for i, doc in enumerate(docs):
-            semantic_score = 1.0 - (i / len(docs))  # Approximate semantic score based on position
-            combined_score = (0.7 * semantic_score) + (0.3 * normalized_bm25[i])
-            combined_scores.append((doc, combined_score))
-
-        # Sort by combined score
-        reranked_docs = [doc for doc, _ in sorted(combined_scores, key=lambda x: x[1], reverse=True)]
-
-        # Aggressive filtering: only keep documents with BM25 score > 0.1
-        filtered_docs = [doc for i, doc in enumerate(reranked_docs) if normalized_bm25[i] > 0.1]
-
-        # Format context from documents with improved structure
-        context_parts = []
-        seen_content = set()  # For deduplication
-
-        for doc in filtered_docs[:5]:  # Limit to top 5 results
-            # Skip duplicates
-            if doc.page_content in seen_content:
-                continue
-            seen_content.add(doc.page_content)
-
-            # Format with improved metadata awareness
-            source = doc.metadata.get("source", "Unknown")
-            filename = doc.metadata.get("filename", os.path.basename(source))
-            directory = doc.metadata.get("directory", os.path.dirname(source))
-            header = doc.metadata.get("closest_header", "")
-
-            # Create a well-structured context entry
-            context_entry = f"## {source}"
-            if header:
-                context_entry += f"\n{header}:"
-
-            context_entry += f"\n{doc.page_content}"
-            context_parts.append(context_entry)
-
-        return "\n\n".join(context_parts)
+            return f"❌ Retrieval Failed: {str(e)}"
     except Exception as e:
-        import traceback
-        traceback.print_exc()
         return f"❌ Retrieval Failed: {str(e)}"
 
 if __name__ == "__main__":
@@ -134,11 +59,11 @@ if __name__ == "__main__":
         print("❌ Invalid directory!")
         sys.exit(1)
 
-    documents = load_documents(knowledge_base_dir, verbose=True)
+    documents = load_documents(knowledge_base_dir)
     api_key = load_api_key()
     embedding_model = TogetherEmbeddings(model="BAAI/bge-large-en-v1.5", api_key=api_key)
 
-    index = load_or_create_faiss(documents, embedding_model, verbose=True)
+    index = load_or_create_faiss(documents, embedding_model)
     retriever = get_faiss_retriever(index)
 
     if not retriever:

@@ -14,50 +14,49 @@ def load_config():
         raise ValueError(f"ERROR: Failed to parse YAML in config.yaml: {e}")
 
 def load_api_key():
-    """Retrieves the Together.AI API key from config.yaml."""
+    """Loads the API key from the config."""
     config = load_config()
-    api_key = config.get('together_ai', {}).get('api_key')
-
-    if not api_key:
-        raise ValueError("ERROR: TOGETHER_API_KEY is missing or empty in config.yaml!")
-
-    return api_key
+    
+    # Check if we're using Gemini or Together API
+    current_model = get_model_name()
+    if current_model == "gemini_flash":
+        return config.get("gemini", {}).get("api_key")
+    else:
+        return config.get("together_ai", {}).get("api_key")
 
 def get_system_prompt():
-    """Retrieves the default system prompt from config.yaml."""
+    """Gets the system prompt from the config."""
     config = load_config()
-    return config.get('together_ai', {}).get('default_system_prompt', "You are an AI assistant.")  # ✅ Fix: Now defined properly
+    return config.get("llm", {}).get("system_prompt", 
+           "You are a helpful AI assistant that provides detailed and accurate responses.")
 
 def get_model_name():
-    """Retrieves the currently selected model key from config.yaml."""
+    """Gets the current model name from the config."""
     config = load_config()
-    models = config.get('together_ai', {}).get('models', {})
-    default_model = config.get('together_ai', {}).get('default_model', None)
-
-    if default_model not in models:
-        raise ValueError(f"ERROR: Model key '{default_model}' is not found in config.yaml! Ensure it matches a valid key in 'models'.")
-
-    return default_model  # ✅ This now returns the correct key like 'mixtral_8x7b_v01'
+    return config.get("llm", {}).get("model_name", "mixtral_8x7b_v01")
 
 def get_model_api_name():
-    """Retrieves the full Together AI model name for API calls."""
+    """Gets the API name for the current model."""
     config = load_config()
-    models = config.get('together_ai', {}).get('models', {})
-    model_key = get_model_name()
+    model_name = get_model_name()
+    
+    # Handle Gemini models
+    if model_name == "gemini_flash":
+        return config.get("gemini", {}).get("model_name", "gemini-2.0-flash-001")
+    
+    # Handle Together.AI models
+    return config.get("together_ai", {}).get("models", {}).get(model_name, {}).get("api_name")
 
-    return models.get(model_key, None)  # ✅ This now returns the full API model name
-
-def set_model_name(new_model_key):
-    """Updates the config.yaml file to switch the default model."""
-    config = load_config()
-
-    if new_model_key not in config.get('together_ai', {}).get('models', {}):
-        raise ValueError(f"ERROR: Model '{new_model_key}' is not listed in config.yaml!")
-
-    config['together_ai']['default_model'] = new_model_key  # ✅ Update model selection
-
-    # ✅ Save the updated configuration
-    with open(CONFIG_PATH, 'w') as file:
-        yaml.safe_dump(config, file, default_flow_style=False)
-
-    print(f"✅ Model successfully switched to {new_model_key}")
+def set_model_name(model_name):
+    """Sets the current model name in the config."""
+    config_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "config.yaml")
+    with open(config_path, 'r') as file:
+        config = yaml.safe_load(file)
+    
+    if "llm" not in config:
+        config["llm"] = {}
+    
+    config["llm"]["model_name"] = model_name
+    
+    with open(config_path, 'w') as file:
+        yaml.dump(config, file, default_flow_style=False)

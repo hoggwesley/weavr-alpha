@@ -17,3 +17,4 @@ watchdog
 textual
 rank_bm25
 together
+google-genai

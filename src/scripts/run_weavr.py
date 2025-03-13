@@ -61,7 +61,7 @@ if not IS_TUI_MODE:
     # ✅ Command Menu
     print("\n🔹 Commands:")
     print(" - `/exit` : Quit the program")
-    print(" - `/model` : Switch AI models (by number)")
+    print(" - `/model` : Select AI model from menu")
     print(" - `/rag` : Toggle Retrieval-Augmented Generation (RAG)")
     print(" - `/cot` : Toggle Chain-of-Thought reasoning")
     print(" - `/clearindex` : Clear the existing index to force re-indexing")
@@ -91,7 +91,13 @@ while True:
             knowledge_base_dir, retriever, observer, USE_RAG = clearindex_command.execute(knowledge_base_dir, observer)
             
         elif query.lower() == "/model":
-            model_command.execute()
+            try:
+                model_command.execute()
+                print(f"🔹 Current AI Model: {get_model_name()} ({get_model_api_name()})")  # Print the current model after switching
+            except Exception as e:
+                print(f"❌ Error: {str(e)}")
+                if DEBUG_MODE:
+                    traceback.print_exc()
 
         elif query.lower() == "/rag":
             knowledge_base_dir, retriever, observer, USE_RAG = rag_command.execute(IS_TUI_MODE, knowledge_base_dir, reindex_flag, observer, USE_RAG)

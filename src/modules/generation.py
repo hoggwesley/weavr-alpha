@@ -7,6 +7,8 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from modules.config_loader import load_api_key, get_model_name, get_model_api_name, get_system_prompt
 from modules.cot_engine import MixtralCoTFormatter  # Updated import path
 from modules.user_instructions import load_instructions, get_combined_prompt
+from modules.models import mixtral_8x7b_v01, qwen_72b_instruct
+from modules.models import gemini_flash # Import the Gemini module
 
 import importlib
 import tiktoken
@@ -197,6 +199,24 @@ Please answer based solely on the information available in the knowledge base.
         # debug_print(f"Error in query_together: {str(e)}")
         # debug_print(traceback.format_exc())
         return f"Error generating response: {str(e)}", 0, []
+
+def query_together(query, context="", task_type="default"):
+    """Queries the AI model based on the selected model in config.yaml."""
+    model_name = get_model_name()
+
+    # Select the appropriate model based on the configuration
+    if model_name == "mixtral_8x7b_v01":
+        prompt = f"Context: {context}\nUser Query: {query}"
+        response, token_count = mixtral_8x7b_v01.generate_response(prompt)
+        return response, token_count, None
+    elif model_name == "qwen_72b_instruct":
+        response, token_count, reasoning_steps = qwen_72b_instruct.generate_response(query, context, task_type)
+        return response, token_count, reasoning_steps
+    elif model_name == "gemini_flash": # Call the Gemini model
+        response, token_count = gemini_flash.generate_response(query, context)
+        return  response, token_count, None
+    else:
+        return "Error: Invalid model name in config.yaml", 0, None
 
 if __name__ == "__main__":
     print("🔹 Running AI Generation Test...")

@@ -16,7 +16,6 @@ sys.path.append(PROJECT_ROOT)
 class WeavrTUI(App):
     """Textual-based TUI for Weavr AI"""
     BINDINGS = [
-        ("m", "switch_model", "Switch Model"),
         ("r", "toggle_rag", "Toggle RAG"),
         ("q", "quit", "Quit Weavr AI"),
         ("escape", "quit", "Force Quit"),  # ✅ Press ESC to exit immediately

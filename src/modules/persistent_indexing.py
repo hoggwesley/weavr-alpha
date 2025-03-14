@@ -13,7 +13,7 @@ from typing import Dict, List, Set, Tuple, Optional
 from langchain_community.vectorstores import FAISS
 from modules.config_loader import load_api_key
 from modules.indexing import load_document, load_or_create_faiss
-from langchain_together import TogetherEmbeddings
+from langchain_community.embeddings import HuggingFaceEmbeddings
 
 # Constants
 DEFAULT_INDEX_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "data", "indices")
@@ -156,10 +156,8 @@ class PersistentIndexManager:
         """
         # Ensure embedding model is initialized
         if self.embedding_model is None:
-            api_key = load_api_key()
-            self.embedding_model = TogetherEmbeddings(
-                model=self.embedding_model_name, 
-                api_key=api_key
+            self.embedding_model = HuggingFaceEmbeddings(
+                model_name=self.embedding_model_name
             )
         
         # Check if config has changed

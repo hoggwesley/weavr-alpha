@@ -2,7 +2,6 @@ markdown
 beautifulsoup4
 langchain
 langchain_community
-langchain-together
 faiss-cpu
 transformers
 fastapi
@@ -16,5 +15,4 @@ requests
 watchdog
 textual
 rank_bm25
-together
 google-genai

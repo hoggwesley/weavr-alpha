@@ -11,7 +11,10 @@ from typing import List
 import traceback
 import re
 
-from langchain_together import TogetherEmbeddings
+# Remove TogetherEmbeddings import
+# from langchain_together import TogetherEmbeddings
+# Use HuggingFace embeddings instead
+from langchain_community.embeddings import HuggingFaceEmbeddings
 
 from modules.config_loader import load_api_key
 from modules.parsers.file_parser import parse_file

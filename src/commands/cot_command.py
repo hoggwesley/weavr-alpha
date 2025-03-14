@@ -1,14 +1,37 @@
-def execute(query, use_cot):
-    """Executes the /cot command to toggle Chain-of-Thought reasoning."""
-    parts = query.split()
-    if len(parts) == 1:
-        # Toggle between disabled and default CoT
-        use_cot = not use_cot
-        cot_mode = "default"
-        status = "ENABLED" if use_cot else "DISABLED"
-        print(f"🔄 Chain-of-Thought (CoT) Reasoning {status} (Mode: {cot_mode})")
-    else:
-        cot_mode = parts[1]
-        use_cot = True
-        print(f"🔄 Chain-of-Thought (CoT) Reasoning ENABLED (Mode: {cot_mode})")
-    return use_cot
+"""
+Command handler for Chain-of-Thought settings in Weavr AI.
+"""
+from modules.config_loader import load_config, save_config
+
+def execute(submenu_choice=None):
+    """Handle Chain-of-Thought toggle command."""
+    try:
+        config = load_config()
+        cot_enabled = config.get("chain_of_thought", {}).get("enabled", False)
+        
+        if submenu_choice == "1":  # Toggle CoT
+            # Toggle the setting
+            if "chain_of_thought" not in config:
+                config["chain_of_thought"] = {}
+            config["chain_of_thought"]["enabled"] = not cot_enabled
+            
+            if save_config(config):
+                new_state = "enabled" if not cot_enabled else "disabled"
+                return f"✅ Chain-of-Thought reasoning {new_state}.\n\nPress Enter to return to AI Behavior menu."
+            else:
+                return "❌ Failed to save Chain-of-Thought setting.\n\nPress Enter to return to AI Behavior menu."
+                
+        # Show current status
+        status = "enabled" if cot_enabled else "disabled"
+        return f"""
+🔄 Chain-of-Thought Settings
+══════════════════════════
+Current status: {status}
+
+1. Toggle Chain-of-Thought (currently {status})
+2. Back to AI Behavior menu
+
+Enter your choice (1-2): """
+            
+    except Exception as e:
+        return f"❌ Error handling Chain-of-Thought command: {e}\n\nPress Enter to return to AI Behavior menu."

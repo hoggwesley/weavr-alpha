@@ -1,222 +1,270 @@
+"""
+Core generation module for Weavr AI.
+"""
 import sys
 import os
 
 # ✅ Fix path so 'modules' is recognized correctly
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
-from modules.config_loader import load_api_key, get_model_name, get_model_api_name, get_system_prompt
-from modules.cot_engine import MixtralCoTFormatter  # Updated import path
+from modules.config_loader import load_api_key, get_model_name, get_model_api_name, get_system_prompt, load_config, save_config
+from modules.cot_engine import MixtralCoTFormatter
 from modules.user_instructions import load_instructions, get_combined_prompt
-from modules.models import mixtral_8x7b_v01, qwen_72b_instruct
-from modules.models import gemini_flash # Import the Gemini module
+from modules.models import gemini_flash
+from modules.context_buffer import context_buffer
+from modules.structured_memory import get_structured_memory, initialize_structured_memory
+from modules.app_state import state
 
 import importlib
 import tiktoken
 import re
-import traceback  # For more detailed error logging
+import traceback
 
 # Enable debugging - commented out for production
 DEBUG_MODE = False  # Change to True for debugging
 
-def debug_print(message):
-    """Print debug information when debug mode is enabled"""
-    if DEBUG_MODE:
-        print(f"🔍 DEBUG [generation]: {message}")
+# Add menu context tracking
+CURRENT_MENU = "main"
 
-def count_tokens(text):
-    """Returns the token count for a given text using OpenAI-compatible tokenizer."""
-    encoding = tiktoken.get_encoding("cl100k_base")
-    return len(encoding.encode(text))
+def show_menu():
+    """Shows the main menu of available commands."""
+    global CURRENT_MENU
+    CURRENT_MENU = "main"
+    menu = """
+🤖 Weavr AI Command Menu
+════════════════════════
 
-def clean_response(response_text):
-    """Removes unwanted meta-text from AI responses."""
-    patterns = [
-        r"User Satisfaction:.*",
-        r"System Improvement Suggestions:.*",
-    ]
-    
-    for pattern in patterns:
-        response_text = re.sub(pattern, "", response_text, flags=re.MULTILINE)
+1. Memory Management
+   - View and manage structured knowledge
+   - Toggle deep search mode
+   - Enable/disable knowledge system
+   - Export knowledge
 
-    return response_text.strip()
+2. Context Management
+   - View conversation history
+   - Clear conversation memory
 
-def query_together(query, context="", task_type="default", cot_mode="default"):
-    """Routes AI requests while ensuring clean response formatting."""
-    print("✅ query_together CALLED")
-    try:
-        # debug_print(f"query_together called with task_type={task_type}, cot_mode={cot_mode}")
-        
-        model_key = get_model_name()  
-        model_name = get_model_api_name()
+3. AI Behavior
+   - View/edit instructions
+   - Toggle Chain-of-Thought mode
 
-        if not model_name:
-            raise ValueError(f"ERROR: Model '{model_key}' is not found in config.yaml!")
+Commands:
+- Type a number (1-3) to access a submenu
+- Type /menu to show this menu again
+- Type /exit to quit
+- Or just type your question to chat with AI
 
-        module_name = f"modules.models.{model_key}"  # ✅ Correct path
-        # debug_print(f"Loading model module: {module_name}")
-
-        try:
-            model_module = importlib.import_module(module_name)
-        except ModuleNotFoundError:
-            raise ImportError(f"ERROR: Model module '{module_name}' not found.")
-
-        if not hasattr(model_module, "generate_response"):
-            raise AttributeError(f"ERROR: Module '{module_name}' is missing the 'generate_response' function!")
-
-        # ✅ Enforce system prompt for stricter behavior
-        system_prompt = get_system_prompt()
-        
-        # Load user instructions and combine with system prompt
-        user_instructions = load_instructions()
-        combined_prompt = get_combined_prompt(system_prompt, user_instructions)
-
-        # Initialize CoT Engine
-        formatter = MixtralCoTFormatter()
-
-        # ✅ Get AI response (with optional CoT reasoning)
-        if task_type == "cot":
-            # debug_print("Generating CoT reasoning steps")
-
-            # EXPERIMENT: Use Mistral-7B for reasoning steps
-            try:
-                reasoning_module = importlib.import_module("modules.models.mistral_7b_v01")
-                # debug_print("Using Mistral-7B for reasoning steps")
-            except ModuleNotFoundError:
-                # debug_print("Mistral-7B model not found, falling back to selected model")
-                reasoning_module = model_module
-
-            # First API call: Generate reasoning steps with Mistral-7B
-            reasoning_prompt = f"""<s>[INST] <<SYS>>
-{combined_prompt}
-
-You are now the reasoning engine for Weavr AI. Your task is to provide clear analysis points.
-
-When analyzing questions about code, files, or directories:
-1. Note the specific files or directories mentioned
-2. Consider the structure and organization of the codebase
-3. Think about how different components interact
-4. Consider the most relevant sections based on the headers
-
-You MUST respond using a numbered list format:
-1. First key insight about the topic
-2. Second key insight about the topic
-3. Third key insight about the topic
-4. Fourth key insight about the topic
-
-Be concise, clear, and analytical.
-<</SYS>>
-
-Analyze this query step by step: {query}
-
-{context if context else ""}
-[/INST]"""
-
-            # debug_print(f"Reasoning prompt: {reasoning_prompt[:200]}...")
-            # debug_print("Calling generate_response for reasoning steps using Mistral-7B")
-            reasoning_text, reasoning_token_count = reasoning_module.generate_response(reasoning_prompt)
-            # debug_print(f"Raw reasoning text: {reasoning_text[:200]}...")
-
-            # Extract reasoning steps
-            reasoning_steps, _ = formatter.parse_response(reasoning_text)  # Use formatter to parse steps
-            # debug_print(f"Extracted {len(reasoning_steps)} reasoning steps from Mistral-7B")
-
-            # Second API call: Synthesize final answer with Mixtral-8x7B
-            synthesis_prompt = f"""<s>[INST] <<SYS>>
-{combined_prompt}
-
-You are the main response engine for Weavr AI, a precise knowledge assistant. Focus exclusively on information available in the knowledge base provided below, avoiding all outside knowledge.
-
-KNOWLEDGE BASE INFORMATION:
-{context}
-
-RULES:
-1. ONLY use information from the knowledge base above.
-2. NEVER introduce facts not present in the knowledge base.
-3. If the knowledge base doesn't have relevant information in my knowledge base, say "I don't have specific information about that in my knowledge base."
-4. DO NOT mention the knowledge base or cite sources in your answer.
-5. Structure your answer clearly and concisely.
-
-Question: {query}
-<</SYS>>
-
-The user asked: "{query}"
-
-Please answer based solely on the information available in the knowledge base.
-[/INST]"""
-
-            # debug_print(f"Synthesis prompt: {synthesis_prompt[:200]}...")
-            # debug_print("Calling generate_response for final answer using Mixtral-8x7B")
-            final_answer_text, final_answer_token_count = model_module.generate_response(synthesis_prompt)
-            # debug_print(f"Raw final answer from Mixtral-8x7B: {final_answer_text[:200]}...")
-            
-            # Clean the final answer
-            final_answer_text = final_answer_text.strip()
-            # debug_print(f"Cleaned final answer: {final_answer_text[:100]}...")
-
-            # Combine token counts
-            token_count = reasoning_token_count + final_answer_token_count
-
-            # Format the final response - use newlines between steps for better readability
-            formatted_text = "\n\n".join(reasoning_steps)
-            
-            # Only append final answer if we have content
-            if final_answer_text:
-                formatted_text += f"\n\n=== ANSWER ===\n{final_answer_text}"
-            else:
-                # Fallback if final answer is empty
-                formatted_text += "\n\n=== ANSWER ===\nBased on the analysis, no definitive conclusion can be reached."
-
-            return formatted_text, token_count, reasoning_steps
-        
-        else:
-            # Non-CoT response
-            prompt = f"""<s>[INST] <<SYS>>
-{combined_prompt}
-
-You are the main response engine for Weavr AI, a precise knowledge assistant. Focus exclusively on information available in the knowledge base provided below, avoiding all outside knowledge.
-
-KNOWLEDGE BASE INFORMATION:
-{context}
-
-RULES:
-1. ONLY use information from the knowledge base above.
-2. NEVER introduce facts not present in the knowledge base.
-3. If the knowledge base doesn't have relevant information in my knowledge base, say "I don't have specific information about that in my knowledge base."
-4. DO NOT mention the knowledge base or cite sources in your answer.
-5. Structure your answer clearly and concisely.
-
-Question: {query}
-<</SYS>>
-
-The user asked: "{query}"
-
-Please answer based solely on the information available in the knowledge base.
-[/INST]"""
-            response_text, token_count = model_module.generate_response(prompt)
-            return response_text, token_count, []
-        
-    except Exception as e:
-        # debug_print(f"Error in query_together: {str(e)}")
-        # debug_print(traceback.format_exc())
-        return f"Error generating response: {str(e)}", 0, []
+What would you like to do? """
+    return menu
 
 def query_together(query, context="", task_type="default"):
     """Queries the AI model based on the selected model in config.yaml."""
-    model_name = get_model_name()
+    try:
+        model_name = get_model_name()
 
-    # Select the appropriate model based on the configuration
-    if model_name == "mixtral_8x7b_v01":
-        prompt = f"Context: {context}\nUser Query: {query}"
-        response, token_count = mixtral_8x7b_v01.generate_response(prompt)
-        return response, token_count, None
-    elif model_name == "qwen_72b_instruct":
-        response, token_count, reasoning_steps = qwen_72b_instruct.generate_response(query, context, task_type)
-        return response, token_count, reasoning_steps
-    elif model_name == "gemini_flash": # Call the Gemini model
-        response, token_count = gemini_flash.generate_response(query, context)
-        return  response, token_count, None
-    else:
-        return "Error: Invalid model name in config.yaml", 0, None
+        # Get conversation context from the context buffer
+        conversation_context = context_buffer.get_formatted_context(query)
+        
+        # Apply basic relevance filtering to the context buffer
+        context_buffer.filter_by_relevance(query)
+
+        # Select the appropriate model based on the configuration
+        if model_name == "gemini_flash": # Call the Gemini model
+            response = gemini_flash.generate_response(
+                query, 
+                context=context,  # This is mostly for backward compatibility
+                conversation_context=conversation_context
+            )
+            
+            # Store the exchange in the context buffer if response is successful
+            if isinstance(response, str):
+                context_buffer.add_exchange(query, response)
+                return response
+            elif isinstance(response, tuple):
+                response_text = response[0]
+                context_buffer.add_exchange(query, response_text)
+                return response_text
+            else:
+                raise ValueError(f"Unexpected response type: {type(response)}")
+        else:
+            return "Error: Invalid model name in config.yaml"
+    except Exception as e:
+        return f"Error generating response: {str(e)}"
+
+def handle_command(command, args=None):
+    """Handle slash commands."""
+    command = command.lower()
+    args = args or []
+    
+    if command == "/knowledge":
+        # Handle knowledge subcommands
+        if not args:  # No subcommand - toggle knowledge system
+            try:
+                if not state.use_knowledge:
+                    config = load_config()
+                    knowledge_base_dir = config.get("knowledge_base", {}).get("directory", None)
+                    if not knowledge_base_dir:
+                        return "❌ Knowledge base directory not set. Use /knowledge set to configure it."
+                    if not os.path.isdir(knowledge_base_dir):
+                        return f"❌ Knowledge base directory does not exist: {knowledge_base_dir}"
+                    
+                    print(f"📚 Initializing knowledge system from: {knowledge_base_dir}")
+                    state.structured_mem = initialize_structured_memory(knowledge_base_dir)
+                    if state.structured_mem:
+                        state.use_knowledge = True
+                        return "✅ Knowledge system enabled and initialized successfully."
+                    else:
+                        return "❌ Failed to initialize knowledge system."
+                else:
+                    if state.structured_mem:
+                        state.structured_mem.stop_file_watching()
+                    state.structured_mem = None
+                    state.use_knowledge = False
+                    return "✅ Knowledge system disabled."
+            except Exception as e:
+                if state.debug_mode:
+                    traceback.print_exc()
+                return f"❌ Error toggling knowledge system: {str(e)}"
+                
+        subcommand = args[0].lower()
+        
+        if subcommand == "show":  # Show current directory
+            config = load_config()
+            current_dir = config.get("knowledge_base", {}).get("directory", "Not set")
+            return f"📂 Current knowledge base directory: {current_dir}"
+            
+        elif subcommand == "status":  # Show knowledge base structure
+            try:
+                config = load_config()
+                knowledge_base_dir = config.get("knowledge_base", {}).get("directory", None)
+                if not knowledge_base_dir:
+                    return "❌ Knowledge base directory not set. Use /knowledge set to configure it."
+                if not os.path.isdir(knowledge_base_dir):
+                    return f"❌ Knowledge base directory does not exist: {knowledge_base_dir}"
+                
+                # First show stats from loaded knowledge if available
+                output = []
+                if state.structured_mem and state.structured_mem.knowledge_store:
+                    doc_count = len(state.structured_mem.knowledge_store)
+                    section_count = sum(len(doc.get('sections', [])) for doc in state.structured_mem.knowledge_store.values())
+                    output.extend([
+                        "📊 Knowledge System Status",
+                        "════════════════════════",
+                        f"- {doc_count} documents loaded",
+                        f"- {section_count} total sections indexed",
+                        ""
+                    ])
+                
+                # Then show directory structure
+                output.extend([f"📚 Knowledge Base Directory ({knowledge_base_dir})", "════════════════════════"])
+                
+                total_files = 0
+                # First collect all paths to sort them
+                all_paths = []
+                for root, dirs, files in os.walk(knowledge_base_dir):
+                    rel_path = os.path.relpath(root, knowledge_base_dir)
+                    if rel_path == ".":
+                        # Handle files in root directory
+                        for f in files:
+                            if f.endswith(('.md', '.txt')):
+                                all_paths.append((0, False, f))
+                                total_files += 1
+                        continue
+                    
+                    # Add directory
+                    level = rel_path.count(os.sep)
+                    all_paths.append((level, True, os.path.basename(root)))
+                    
+                    # Add its files
+                    for f in files:
+                        if f.endswith(('.md', '.txt')):
+                            all_paths.append((level + 1, False, f))
+                            total_files += 1
+                
+                # Sort paths by level and name
+                all_paths.sort(key=lambda x: (x[0], not x[1], x[2].lower()))
+                
+                # Generate output
+                for level, is_dir, name in all_paths:
+                    indent = "  " * level
+                    if is_dir:
+                        output.append(f"{indent}📂 {name}/")
+                    else:
+                        output.append(f"{indent}📄 {name}")
+                
+                if total_files == 0:
+                    output.append("\n⚠️  No markdown or text files found in directory.")
+                else:
+                    output.append(f"\n📊 Total files: {total_files}")
+                
+                return "\n".join(output)
+                    
+            except Exception as e:
+                if state.debug_mode:
+                    traceback.print_exc()
+                return f"❌ Error displaying knowledge base status: {str(e)}"
+                
+        elif subcommand == "set":  # Set directory interactively
+            print("Enter the full path to your knowledge base directory:")
+            try:
+                new_dir = input("> ").strip()
+                if not new_dir:
+                    return "❌ Operation cancelled."
+                
+                # Convert to absolute path and normalize
+                new_dir = os.path.abspath(os.path.normpath(new_dir))
+                
+                if not os.path.isdir(new_dir):
+                    return f"❌ Directory does not exist: {new_dir}"
+                
+                # First stop any existing file watching
+                if state.structured_mem:
+                    state.structured_mem.stop_file_watching()
+                    state.structured_mem = None
+                    state.use_knowledge = False
+                
+                # Save the new directory to config
+                config = load_config()
+                if "knowledge_base" not in config:
+                    config["knowledge_base"] = {}
+                config["knowledge_base"]["directory"] = new_dir
+                
+                if not save_config(config):
+                    return "❌ Failed to save configuration."
+                
+                # Initialize with new directory
+                print(f"📚 Initializing knowledge system from: {new_dir}")
+                state.structured_mem = initialize_structured_memory(new_dir)
+                if state.structured_mem:
+                    state.use_knowledge = True
+                    return f"""✅ Knowledge base directory set and initialized successfully.
+📂 Directory: {new_dir}
+📊 Documents loaded: {len(state.structured_mem.knowledge_store)}
+Use /knowledge status to see full details."""
+                else:
+                    return "❌ Directory set but failed to initialize knowledge system."
+                    
+            except Exception as e:
+                if state.debug_mode:
+                    traceback.print_exc()
+                return f"❌ Error setting knowledge directory: {str(e)}"
+        
+        # If subcommand not recognized, show help
+        return """📚 Knowledge System Commands
+════════════════════════
+/knowledge         - Toggle knowledge system on/off
+/knowledge show    - Show current directory
+/knowledge status  - Show knowledge base structure
+/knowledge set     - Set knowledge base directory"""
+            
+    elif command == "/cot":
+        state.cot_enabled = not state.cot_enabled
+        return f"✅ Chain-of-Thought mode {'enabled' if state.cot_enabled else 'disabled'}."
+        
+    elif command == "/exit":
+        return "Exiting..."
+        
+    return f"❌ Unknown command: {command}"
 
 if __name__ == "__main__":
     print("🔹 Running AI Generation Test...")

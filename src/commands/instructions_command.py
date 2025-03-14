@@ -1,48 +1,49 @@
 from modules.user_instructions import load_instructions, save_instructions
 
-def execute():
+def execute(submenu_choice=None):
     """Executes the /instructions command to view or edit AI behavior instructions."""
     current_instructions = load_instructions()
     
-    print("\n📝 AI Behavior Instructions")
-    print("---------------------------")
-    if current_instructions:
-        print("Current instructions:")
-        print(current_instructions)
-    else:
-        print("No custom instructions set. The AI is using default behavior.")
-    
-    print("\nOptions:")
-    print("1. Edit instructions")
-    print("2. Delete instructions")
-    print("3. Leave instructions unchanged")
-    
-    choice = input("\nEnter your choice (1-3, or press Enter to leave as is): ").strip()
-    
-    if choice == "1":
-        # Note: Windows users must press Ctrl+Z then Enter to signal EOF.
-        print("\nEnter new instructions (press Ctrl+Z then Enter on a new line when finished):")
-        lines = []
-        try:
-            while True:
-                line = input()
-                lines.append(line)
-        except EOFError:
-            pass  # EOF signaled
-        new_instructions = "\n".join(lines)
-        if save_instructions(new_instructions):
-            print("✅ Instructions saved successfully.")
+    if submenu_choice == "1":  # View instructions
+        if current_instructions:
+            return f"""
+📝 Current AI Instructions
+═════════════════════════
+{current_instructions}
+
+Press Enter to return to AI Behavior menu."""
         else:
-            print("❌ Failed to save instructions.")
-    
-    elif choice == "2":
+            return "No custom instructions set. The AI is using default behavior.\n\nPress Enter to return to AI Behavior menu."
+            
+    elif submenu_choice == "2":  # Edit instructions
+        return """
+📝 Edit AI Instructions
+═════════════════════════
+Enter new instructions below. Press Ctrl+Z then Enter when finished.
+To cancel, just press Enter without typing anything.
+
+Current instructions:
+""" + (current_instructions if current_instructions else "(none)")
+            
+    elif submenu_choice == "3":  # Delete instructions
         if save_instructions(""):
-            print("✅ Instructions deleted successfully.")
+            return "✅ Instructions deleted successfully.\n\nPress Enter to return to AI Behavior menu."
         else:
-            print("❌ Failed to delete instructions.")
-    
-    elif choice == "3" or choice == "":
-        print("Instructions unchanged.")
-    
-    else:
-        print("Invalid choice. Instructions unchanged.")
+            return "❌ Failed to delete instructions.\n\nPress Enter to return to AI Behavior menu."
+            
+    # If no submenu choice, treat as saving new instructions
+    elif submenu_choice:
+        if save_instructions(submenu_choice):
+            return "✅ Instructions saved successfully.\n\nPress Enter to return to AI Behavior menu."
+        else:
+            return "❌ Failed to save instructions.\n\nPress Enter to return to AI Behavior menu."
+            
+    return """
+📝 AI Behavior Instructions
+═════════════════════════
+1. View current instructions
+2. Edit instructions 
+3. Delete instructions
+4. Back to main menu
+
+Enter your choice (1-4): """

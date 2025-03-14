@@ -2,6 +2,7 @@ import sys
 import os
 import argparse
 import traceback
+import asyncio
 
 # Ensure Python finds 'modules/'
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -69,41 +70,53 @@ print(" - /knowledge show    : Show current directory")
 print(" - /knowledge status  : Show knowledge base structure")
 print(" - /knowledge set     : Set knowledge base directory")
 print(" - /knowledge limit   : Set maximum files to process")
+print(" - /its              : Iterative Thought Sculpting menu")
 print(" - /cot              : Toggle Chain-of-Thought mode (Note: Currently broken, will be reimplemented)")
 print(" - /exit             : Quit")
 
 # Main interaction loop
-while True:
-    try:
-        print("\n🎭 --- User --- 🎭")
-        query = input("> ").strip()
+async def main_loop():
+    while True:
+        try:
+            print("\n🎭 --- User --- 🎭")
+            query = input("> ").strip()
 
-        if query.lower() == "/exit":
-            print("Exiting Weavr AI...")
-            break
-            
-        # Handle slash commands
-        if query.startswith('/'):
-            # Split command and args, preserving quoted strings
-            parts = query.split()
-            command = parts[0]
-            args = parts[1:] if len(parts) > 1 else []
-            
-            result = handle_command(command, args)
-            print(result)
-            continue
-            
-        # Handle normal chat interaction
-        if state.use_knowledge and state.structured_mem:
-            state.structured_mem.check_for_updates()
-            
-        response = query_together(query)
-        print("\n🤖 --- AI Response --- 🤖\n", response)
-            
-    except Exception as e:
-        print(f"❌ Error: {str(e)}")
-        if state.debug_mode:
-            traceback.print_exc()
+            if query.lower() == "/exit":
+                print("Exiting Weavr AI...")
+                break
+                
+            # Handle slash commands
+            if query.startswith('/'):
+                # Split command and args, preserving quoted strings
+                parts = query.split()
+                command = parts[0]
+                args = parts[1:] if len(parts) > 1 else []
+                
+                result = handle_command(command, args)
+                print(result)
+                continue
+                
+            # Handle menu input (1-3)
+            if result and "Enter your choice (1-3)" in result:
+                if query.isdigit() and 1 <= int(query) <= 3:
+                    result = handle_command("/its", [query])
+                    print(result)
+                    continue
+                
+            # Handle normal chat interaction
+            if state.use_knowledge and state.structured_mem:
+                state.structured_mem.check_for_updates()
+                
+            response = await query_together(query)
+            print("\n🤖 --- AI Response --- 🤖\n", response)
+                
+        except Exception as e:
+            print(f"❌ Error: {str(e)}")
+            if state.debug_mode:
+                traceback.print_exc()
+
+# Run the main loop
+asyncio.run(main_loop())
 
 print("Thanks for using Weavr AI!")
 

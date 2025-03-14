@@ -33,3 +33,14 @@ llm:
     \ information, state the limits of your knowledge rather than making assumptions.\n"
 memory:
   enabled: false
+reasoning_modes:
+  its:
+    cache_timeout: 300
+    debug: false
+    depth_mode: deep
+    enabled: true
+    token_limits:
+      step_1: 1000
+      step_2: 2000
+      step_3: 1500
+      step_4: 2000

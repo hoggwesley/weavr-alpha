@@ -14,6 +14,7 @@ from modules.models import gemini_flash
 from modules.context_buffer import context_buffer
 from modules.structured_memory import get_structured_memory, initialize_structured_memory
 from modules.app_state import state
+from commands.its_command import execute as execute_its_command
 
 import importlib
 import tiktoken
@@ -57,7 +58,7 @@ Commands:
 What would you like to do? """
     return menu
 
-def query_together(query, context="", task_type="default"):
+async def query_together(query, context="", task_type="default"):
     """Queries the AI model based on the selected model in config.yaml."""
     try:
         model_name = get_model_name()
@@ -67,6 +68,31 @@ def query_together(query, context="", task_type="default"):
         
         # Apply basic relevance filtering to the context buffer
         context_buffer.filter_by_relevance(query)
+
+        # If ITS is enabled, use the ITS processor
+        if state.its_enabled and state.its_processor:
+            try:
+                # Get knowledge base if available
+                knowledge_base = state.structured_mem.knowledge_store if state.use_knowledge and state.structured_mem else None
+                
+                # Convert conversation context to list of dicts
+                chat_history = [
+                    {"role": "user" if i % 2 == 0 else "assistant", "content": msg}
+                    for i, msg in enumerate(conversation_context.split("\n\n"))
+                    if msg.strip()
+                ]
+                
+                # Process using ITS
+                response = await state.its_processor.process(query, knowledge_base, chat_history)
+                
+                # Store the exchange in the context buffer if response is successful
+                if response:
+                    context_buffer.add_exchange(query, response)
+                    return response
+                else:
+                    raise ValueError("ITS processor returned empty response")
+            except Exception as e:
+                return f"Error in ITS processing: {str(e)}"
 
         # Select the appropriate model based on the configuration
         if model_name == "gemini_flash": # Call the Gemini model
@@ -96,6 +122,22 @@ def handle_command(command, args=None):
     command = command.lower()
     args = args or []
     
+    # Handle ITS commands
+    if command == "/its":
+        try:
+            # If no args, show menu. Otherwise pass the submenu choice and args
+            if not args:
+                return execute_its_command()
+            else:
+                submenu_choice = args[0]
+                remaining_args = args[1:] if len(args) > 1 else None
+                return execute_its_command(submenu_choice, remaining_args)
+        except Exception as e:
+            if state.debug_mode:
+                traceback.print_exc()
+            return f"❌ Error handling ITS command: {str(e)}"
+    
+    # Handle knowledge subcommands
     if command == "/knowledge":
         # Handle knowledge subcommands
         if not args:  # No subcommand - toggle knowledge system

@@ -8,31 +8,6 @@ observer = None  # Define observer in the global scope
 # Define knowledge_base_dir in the global scope
 knowledge_base_dir = None
 
-def handle_rag_command(args):
-    global rag_mode, observer  # Use the global keyword to modify the global variables
-    if args and args[0].lower() == "off":
-        if rag_mode:
-            print("Turning RAG mode OFF.")
-            rag_mode = False
-            if observer:
-                stop_observer(observer)
-                observer = None
-            print("✅ RAG Mode DISABLED")
-        else:
-            print("RAG mode is already OFF.")
-    else:
-        if not rag_mode:
-            print("Turning RAG mode ON.")
-            rag_mode = True
-            if knowledge_base_dir:
-                reindex_flag = threading.Event()
-                observer = start_observer(knowledge_base_dir, reindex_flag)
-                print("🔄 RAG Mode ENABLED")
-            else:
-                print("Error: Knowledge base directory not set.")
-        else:
-            print("RAG mode is already ON.")
-
 # ... existing code ...
 
 def update_instructions():

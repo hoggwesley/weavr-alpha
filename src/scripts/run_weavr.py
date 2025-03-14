@@ -58,7 +58,7 @@ print(" - /knowledge       : Toggle knowledge system on/off")
 print(" - /knowledge show : Show current directory")
 print(" - /knowledge status : Show knowledge base structure")
 print(" - /knowledge set  : Set knowledge base directory")
-print(" - /cot           : Toggle Chain-of-Thought mode")
+print(" - /cot           : Toggle Chain-of-Thought mode (Note: Currently broken, will be reimplemented)")
 print(" - /exit          : Quit")
 
 # Main interaction loop

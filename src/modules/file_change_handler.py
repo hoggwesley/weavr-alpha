@@ -2,7 +2,6 @@ from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 import time
 import os
-from modules.persistent_indexing import get_or_create_persistent_index
 
 class FileChangeHandler(FileSystemEventHandler):
     def __init__(self, knowledge_base_dir, reindex_flag):

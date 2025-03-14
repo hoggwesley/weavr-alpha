@@ -1,5 +1,7 @@
 """
 Command handler for Chain-of-Thought settings in Weavr AI.
+Note: This functionality is currently broken due to the switch from TogetherAI models to Gemini.
+It will be reimplemented in a future update.
 """
 from modules.config_loader import load_config, save_config
 
@@ -27,6 +29,7 @@ def execute(submenu_choice=None):
 🔄 Chain-of-Thought Settings
 ══════════════════════════
 Current status: {status}
+Note: This functionality is currently broken due to the switch from TogetherAI models to Gemini.
 
 1. Toggle Chain-of-Thought (currently {status})
 2. Back to AI Behavior menu

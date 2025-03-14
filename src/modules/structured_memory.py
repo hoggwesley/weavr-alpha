@@ -10,7 +10,7 @@ from threading import Event
 
 class StructuredMemory:
     """
-    StructuredMemory replaces the RAG system with a preloaded, structured knowledge store.
+    StructuredMemory provides a preloaded, structured knowledge store for Weavr AI.
     Instead of performing real-time retrieval, it maintains persistent structured knowledge
     that can be directly injected into Gemini Flash's context window.
     """

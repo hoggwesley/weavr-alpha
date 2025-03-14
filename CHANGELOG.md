@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- New `/knowledge clear` command to clear knowledge context and optionally set a new directory
+- Enhanced document title awareness in the Gemini model for more relevant responses
+- Intelligent file prioritization algorithm that considers directory depth, keywords, and recency
+
+### Changed
+
+- Improved file selection when limits are reached, prioritizing files in parent directories
+- Modified Gemini model to properly respect knowledge toggle state
+- Updated help text for knowledge commands to include new functionality
+
+### Fixed
+
+- Fixed issue where knowledge context was retained even when toggled off
+
 ## [0.2.0] - 2024-03-14
 
 ### Added

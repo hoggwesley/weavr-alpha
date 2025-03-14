@@ -10,7 +10,7 @@ sys.path.append(PROJECT_ROOT)
 
 from modules.config_loader import (
     load_api_key, get_model_name, get_model_api_name, load_config,
-    set_model_name
+    set_model_name, save_config
 )
 from modules.generation import query_together, handle_command
 from modules.structured_memory import initialize_structured_memory, get_structured_memory
@@ -21,6 +21,7 @@ parser = argparse.ArgumentParser(description="Weavr AI - Interactive AI Assistan
 parser.add_argument("--knowledge", action="store_true", help="Enable Knowledge Base")
 parser.add_argument("--debug", action="store_true", help="Enable debug mode")
 parser.add_argument("--knowdir", type=str, help="Specify knowledge base directory")
+parser.add_argument("--filelimit", type=int, default=None, help="Maximum number of files to process (default: 100)")
 args = parser.parse_args()
 
 # Set debug mode from arguments
@@ -36,8 +37,17 @@ if args.knowledge:
         if not os.path.isdir(knowledge_base_dir):
             raise ValueError(f"Knowledge base directory does not exist: {knowledge_base_dir}")
         
-        print(f"📚 Initializing structured knowledge system from: {knowledge_base_dir}")
-        state.structured_mem = initialize_structured_memory(knowledge_base_dir)
+        # Get file limit from command line args, config, or use default
+        file_limit = args.filelimit if args.filelimit is not None else config.get("knowledge_base", {}).get("file_limit", 100)
+        
+        # Update config with the file limit
+        if "knowledge_base" not in config:
+            config["knowledge_base"] = {}
+        config["knowledge_base"]["file_limit"] = file_limit
+        save_config(config)
+        
+        print(f"📚 Initializing structured knowledge system from: {knowledge_base_dir} (limit: {file_limit} files)")
+        state.structured_mem = initialize_structured_memory(knowledge_base_dir, file_limit=file_limit)
         if state.structured_mem:
             state.use_knowledge = True
             print("✅ Structured memory initialized successfully")
@@ -54,12 +64,13 @@ print(f"🔹 Current AI Model: {get_model_name()} ({get_model_api_name()})")
 
 print("\nType your message to chat with AI")
 print("Available commands:")
-print(" - /knowledge       : Toggle knowledge system on/off")
-print(" - /knowledge show : Show current directory")
-print(" - /knowledge status : Show knowledge base structure")
-print(" - /knowledge set  : Set knowledge base directory")
-print(" - /cot           : Toggle Chain-of-Thought mode (Note: Currently broken, will be reimplemented)")
-print(" - /exit          : Quit")
+print(" - /knowledge         : Toggle knowledge system on/off")
+print(" - /knowledge show    : Show current directory")
+print(" - /knowledge status  : Show knowledge base structure")
+print(" - /knowledge set     : Set knowledge base directory")
+print(" - /knowledge limit   : Set maximum files to process")
+print(" - /cot              : Toggle Chain-of-Thought mode (Note: Currently broken, will be reimplemented)")
+print(" - /exit             : Quit")
 
 # Main interaction loop
 while True:

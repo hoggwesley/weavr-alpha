@@ -4,11 +4,12 @@ gemini:
   api_key: AIzaSyDj5pIOWlRCNSX5RRusyTlZuRDBRvi_OO0
   model_name: gemini-2.0-flash-001
 knowledge_base:
-  directory: C:\Users\hoggw\Documents\The Scriptorium\Comedy (Ignore)
+  directory: C:\Users\hoggw\Documents\The Scriptorium\Comedy (Ignore)\Screech Expanded
+    Universe
+  file_limit: 10
 llm:
   model_name: gemini_flash
-  system_prompt:
-    "You are Weavr AI, a versatile and imaginative AI assistant designed\
+  system_prompt: "You are Weavr AI, a versatile and imaginative AI assistant designed\
     \ to assist with a wide range of tasks including creative writing, academic research,\
     \ coding, and general knowledge inquiries. \n- Prioritize information found within\
     \ the user's personal knowledge base (Obsidian vault) when available.\n- For creative\

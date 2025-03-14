@@ -108,8 +108,11 @@ def handle_command(command, args=None):
                     if not os.path.isdir(knowledge_base_dir):
                         return f"❌ Knowledge base directory does not exist: {knowledge_base_dir}"
                     
-                    print(f"📚 Initializing knowledge system from: {knowledge_base_dir}")
-                    state.structured_mem = initialize_structured_memory(knowledge_base_dir)
+                    # Get file limit from config or use default
+                    file_limit = config.get("knowledge_base", {}).get("file_limit", 100)
+                    
+                    print(f"📚 Initializing knowledge system from: {knowledge_base_dir} (limit: {file_limit} files)")
+                    state.structured_mem = initialize_structured_memory(knowledge_base_dir, file_limit=file_limit)
                     if state.structured_mem:
                         state.use_knowledge = True
                         return "✅ Knowledge system enabled and initialized successfully."
@@ -147,55 +150,103 @@ def handle_command(command, args=None):
                 if state.structured_mem and state.structured_mem.knowledge_store:
                     doc_count = len(state.structured_mem.knowledge_store)
                     section_count = sum(len(doc.get('sections', [])) for doc in state.structured_mem.knowledge_store.values())
+                    file_limit = state.structured_mem.file_limit
+                    total_eligible_files = state.structured_mem.total_eligible_files
+                    excluded_files = state.structured_mem.excluded_files
+                    
                     output.extend([
                         "📊 Knowledge System Status",
                         "════════════════════════",
                         f"- {doc_count} documents loaded",
                         f"- {section_count} total sections indexed",
-                        ""
                     ])
-                
-                # Then show directory structure
-                output.extend([f"📚 Knowledge Base Directory ({knowledge_base_dir})", "════════════════════════"])
-                
-                total_files = 0
-                # First collect all paths to sort them
-                all_paths = []
-                for root, dirs, files in os.walk(knowledge_base_dir):
-                    rel_path = os.path.relpath(root, knowledge_base_dir)
-                    if rel_path == ".":
-                        # Handle files in root directory
-                        for f in files:
-                            if f.endswith(('.md', '.txt')):
-                                all_paths.append((0, False, f))
-                                total_files += 1
-                        continue
                     
-                    # Add directory
-                    level = rel_path.count(os.sep)
-                    all_paths.append((level, True, os.path.basename(root)))
-                    
-                    # Add its files
-                    for f in files:
-                        if f.endswith(('.md', '.txt')):
-                            all_paths.append((level + 1, False, f))
-                            total_files += 1
-                
-                # Sort paths by level and name
-                all_paths.sort(key=lambda x: (x[0], not x[1], x[2].lower()))
-                
-                # Generate output
-                for level, is_dir, name in all_paths:
-                    indent = "  " * level
-                    if is_dir:
-                        output.append(f"{indent}📂 {name}/")
+                    if total_eligible_files > file_limit:
+                        output.append(f"- File limit: {file_limit} (out of {total_eligible_files} eligible files)")
+                        output.append(f"- {total_eligible_files - doc_count} files were not processed due to the file limit")
+                        
+                        # Show excluded files if there are any
+                        if excluded_files:
+                            output.append("")
+                            output.append("📋 Excluded Files (oldest modified first):")
+                            # Show up to 10 excluded files to avoid overwhelming output
+                            for i, file_path in enumerate(excluded_files[:10]):
+                                output.append(f"  - {file_path}")
+                            if len(excluded_files) > 10:
+                                output.append(f"  - ... and {len(excluded_files) - 10} more files")
                     else:
-                        output.append(f"{indent}📄 {name}")
+                        output.append(f"- File limit: {file_limit}")
+                    
+                    output.append("")
+                    
+                    # Show only loaded files, organized by directory
+                    output.append("📚 Loaded Documents")
+                    output.append("════════════════════════")
+                    
+                    # Get all loaded file paths
+                    loaded_files = []
+                    for doc_id, doc_data in state.structured_mem.knowledge_store.items():
+                        if 'file_path' in doc_data:
+                            rel_path = os.path.relpath(doc_data['file_path'], knowledge_base_dir).replace('\\', '/')
+                            loaded_files.append(rel_path)
+                    
+                    # Sort loaded files for consistent display
+                    loaded_files.sort()
+                    
+                    # Group files by directory
+                    dir_structure = {}
+                    for file_path in loaded_files:
+                        parts = file_path.split('/')
+                        current_dict = dir_structure
+                        
+                        # Build directory structure
+                        for i, part in enumerate(parts[:-1]):
+                            if part not in current_dict:
+                                current_dict[part] = {}
+                            current_dict = current_dict[part]
+                        
+                        # Add file to its directory
+                        if '_files' not in current_dict:
+                            current_dict['_files'] = []
+                        current_dict['_files'].append(parts[-1])
+                    
+                    # Function to recursively print directory structure
+                    def print_structure(structure, prefix="", level=0):
+                        result = []
+                        
+                        # Print files in current directory
+                        if '_files' in structure:
+                            for file in sorted(structure['_files']):
+                                result.append(f"{prefix}📄 {file}")
+                        
+                        # Print subdirectories
+                        for dir_name, contents in sorted(structure.items()):
+                            if dir_name != '_files':
+                                result.append(f"{prefix}📂 {dir_name}/")
+                                result.extend(print_structure(contents, prefix + "  ", level + 1))
+                        
+                        return result
+                    
+                    # Generate directory structure output
+                    output.extend(print_structure(dir_structure))
+                    
+                    output.append(f"\n📊 Total loaded files: {doc_count}")
+                    
+                    # If there are excluded files, add a note
+                    if excluded_files:
+                        output.append(f"⚠️ {len(excluded_files)} files were excluded due to the file limit")
+                        output.append("Use /knowledge limit to adjust the file limit")
                 
-                if total_files == 0:
-                    output.append("\n⚠️  No markdown or text files found in directory.")
                 else:
-                    output.append(f"\n📊 Total files: {total_files}")
+                    # If no knowledge is loaded, just show the directory
+                    output.extend([
+                        "📊 Knowledge System Status",
+                        "════════════════════════",
+                        "- No documents loaded",
+                        "",
+                        f"📚 Knowledge Base Directory: {knowledge_base_dir}",
+                        "Use /knowledge to enable the knowledge system"
+                    ])
                 
                 return "\n".join(output)
                     
@@ -217,9 +268,30 @@ def handle_command(command, args=None):
                 if not os.path.isdir(new_dir):
                     return f"❌ Directory does not exist: {new_dir}"
                 
+                # Ask for file limit
+                print("Enter maximum number of files to process (default: 100, enter 0 for no limit):")
+                file_limit_input = input("> ").strip()
+                file_limit = 100  # Default
+                if file_limit_input:
+                    try:
+                        file_limit = int(file_limit_input)
+                        if file_limit < 0:
+                            print("⚠️ Invalid value, using default limit of 100 files")
+                            file_limit = 100
+                        elif file_limit == 0:
+                            print("⚠️ No file limit set - this may cause performance issues with large directories")
+                            file_limit = 10000  # Very high number effectively means no limit
+                    except ValueError:
+                        print("⚠️ Invalid value, using default limit of 100 files")
+                
                 # First stop any existing file watching
                 if state.structured_mem:
                     state.structured_mem.stop_file_watching()
+                    
+                    # Explicitly clear the knowledge store to ensure no residual data
+                    if hasattr(state.structured_mem, 'knowledge_store'):
+                        state.structured_mem.knowledge_store = {}
+                        
                     state.structured_mem = None
                     state.use_knowledge = False
                 
@@ -228,18 +300,20 @@ def handle_command(command, args=None):
                 if "knowledge_base" not in config:
                     config["knowledge_base"] = {}
                 config["knowledge_base"]["directory"] = new_dir
+                config["knowledge_base"]["file_limit"] = file_limit
                 
                 if not save_config(config):
                     return "❌ Failed to save configuration."
                 
                 # Initialize with new directory
-                print(f"📚 Initializing knowledge system from: {new_dir}")
-                state.structured_mem = initialize_structured_memory(new_dir)
+                print(f"📚 Initializing knowledge system from: {new_dir} (limit: {file_limit} files)")
+                state.structured_mem = initialize_structured_memory(new_dir, file_limit=file_limit)
                 if state.structured_mem:
                     state.use_knowledge = True
                     return f"""✅ Knowledge base directory set and initialized successfully.
 📂 Directory: {new_dir}
 📊 Documents loaded: {len(state.structured_mem.knowledge_store)}
+📄 File limit: {file_limit}
 Use /knowledge status to see full details."""
                 else:
                     return "❌ Directory set but failed to initialize knowledge system."
@@ -249,13 +323,136 @@ Use /knowledge status to see full details."""
                     traceback.print_exc()
                 return f"❌ Error setting knowledge directory: {str(e)}"
         
+        elif subcommand == "limit":  # Set file limit
+            try:
+                if len(args) > 1 and args[1].isdigit():
+                    new_limit = int(args[1])
+                    if new_limit <= 0:
+                        return "❌ File limit must be greater than 0."
+                else:
+                    print("Enter maximum number of files to process (current: " + 
+                          str(state.structured_mem.file_limit if state.structured_mem else "not set") + 
+                          ", enter 0 for no limit):")
+                    limit_input = input("> ").strip()
+                    if not limit_input:
+                        return "❌ Operation cancelled."
+                    
+                    try:
+                        new_limit = int(limit_input)
+                        if new_limit < 0:
+                            return "❌ File limit must be greater than or equal to 0."
+                        elif new_limit == 0:
+                            print("⚠️ No file limit set - this may cause performance issues with large directories")
+                            new_limit = 10000  # Very high number effectively means no limit
+                    except ValueError:
+                        return "❌ Invalid value. Please enter a number."
+                
+                # Save the new limit to config
+                config = load_config()
+                if "knowledge_base" not in config:
+                    config["knowledge_base"] = {}
+                config["knowledge_base"]["file_limit"] = new_limit
+                
+                if not save_config(config):
+                    return "❌ Failed to save configuration."
+                
+                # If knowledge system is active, reinitialize with new limit
+                if state.use_knowledge and state.structured_mem:
+                    knowledge_base_dir = state.structured_mem.knowledge_base_dir
+                    state.structured_mem.stop_file_watching()
+                    state.structured_mem = None
+                    
+                    print(f"📚 Reinitializing knowledge system with new limit: {new_limit} files")
+                    state.structured_mem = initialize_structured_memory(knowledge_base_dir, file_limit=new_limit)
+                    if not state.structured_mem:
+                        state.use_knowledge = False
+                        return "❌ Failed to reinitialize knowledge system with new limit."
+                
+                return f"✅ File limit updated to {new_limit} files."
+                
+            except Exception as e:
+                if state.debug_mode:
+                    traceback.print_exc()
+                return f"❌ Error setting file limit: {str(e)}"
+        
+        elif subcommand == "clear":  # Clear knowledge context
+            try:
+                if state.structured_mem:
+                    # Clear the knowledge store but keep the system enabled
+                    state.structured_mem.clear_knowledge()
+                    
+                    # Prompt for a new directory
+                    print("Would you like to set a new knowledge base directory? (y/n)")
+                    response = input("> ").strip().lower()
+                    
+                    if response == 'y' or response == 'yes':
+                        print("Enter the full path to your new knowledge base directory:")
+                        new_dir = input("> ").strip()
+                        if not new_dir:
+                            return "✅ Knowledge context cleared. No new directory set."
+                        
+                        # Convert to absolute path and normalize
+                        new_dir = os.path.abspath(os.path.normpath(new_dir))
+                        
+                        if not os.path.isdir(new_dir):
+                            return f"❌ Directory does not exist: {new_dir}\nKnowledge context was cleared but directory was not changed."
+                        
+                        # Ask for file limit
+                        print("Enter maximum number of files to process (default: 100, enter 0 for no limit):")
+                        file_limit_input = input("> ").strip()
+                        file_limit = 100  # Default
+                        if file_limit_input:
+                            try:
+                                file_limit = int(file_limit_input)
+                                if file_limit < 0:
+                                    print("⚠️ Invalid value, using default limit of 100 files")
+                                    file_limit = 100
+                                elif file_limit == 0:
+                                    print("⚠️ No file limit set - this may cause performance issues with large directories")
+                                    file_limit = 10000  # Very high number effectively means no limit
+                            except ValueError:
+                                print("⚠️ Invalid value, using default limit of 100 files")
+                        
+                        # Save the new directory to config
+                        config = load_config()
+                        if "knowledge_base" not in config:
+                            config["knowledge_base"] = {}
+                        config["knowledge_base"]["directory"] = new_dir
+                        config["knowledge_base"]["file_limit"] = file_limit
+                        
+                        if not save_config(config):
+                            return "❌ Failed to save configuration. Knowledge context was cleared but directory was not changed."
+                        
+                        # Initialize with new directory
+                        print(f"📚 Initializing knowledge system from: {new_dir} (limit: {file_limit} files)")
+                        state.structured_mem = initialize_structured_memory(new_dir, file_limit=file_limit)
+                        if state.structured_mem:
+                            state.use_knowledge = True
+                            return f"""✅ Knowledge context cleared and new directory set successfully.
+📂 Directory: {new_dir}
+📊 Documents loaded: {len(state.structured_mem.knowledge_store)}
+📄 File limit: {file_limit}
+Use /knowledge status to see full details."""
+                        else:
+                            return "❌ Knowledge context cleared but failed to initialize with new directory."
+                    else:
+                        return "✅ Knowledge context cleared. The system is still enabled but all document context has been removed from memory."
+                else:
+                    return "❌ Knowledge system is not enabled. Nothing to clear."
+            except Exception as e:
+                if state.debug_mode:
+                    traceback.print_exc()
+                return f"❌ Error clearing knowledge context: {str(e)}"
+        
         # If subcommand not recognized, show help
         return """📚 Knowledge System Commands
 ════════════════════════
 /knowledge         - Toggle knowledge system on/off
 /knowledge show    - Show current directory
 /knowledge status  - Show knowledge base structure
-/knowledge set     - Set knowledge base directory"""
+/knowledge set     - Set knowledge base directory
+/knowledge limit   - Set maximum files to process
+/knowledge clear   - Clear knowledge context and optionally set a new directory"""
             
     elif command == "/cot":
         state.cot_enabled = not state.cot_enabled

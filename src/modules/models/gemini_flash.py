@@ -4,6 +4,7 @@ from modules.config_loader import load_api_key, get_system_prompt
 import json
 import re
 from modules.structured_memory import get_structured_memory
+from modules.app_state import state
 
 def generate_response(query, context="", conversation_context=""):
     """Handles Gemini AI requests."""
@@ -21,13 +22,32 @@ def generate_response(query, context="", conversation_context=""):
     if conversation_context.strip():
         content_parts.append(conversation_context)
     
+    # Extract potential document titles from the query to improve retrieval
+    document_titles = []
+    title_pattern = r'"([^"]+)"|\'([^\']+)\''
+    for match in re.finditer(title_pattern, query):
+        title = match.group(1) or match.group(2)
+        if title and len(title) > 3:  # Avoid very short matches
+            document_titles.append(title)
+    
     # Get relevant structured knowledge instead of RAG context
     try:
-        structured_memory = get_structured_memory()
-        knowledge_context = structured_memory.get_knowledge_for_query(query)
-        
-        if knowledge_context:
-            content_parts.append(knowledge_context)
+        # Only retrieve knowledge if the knowledge system is enabled
+        if state.use_knowledge and state.structured_mem:
+            structured_memory = get_structured_memory()
+            
+            # If document titles were found in the query, add a note about them
+            if document_titles:
+                enhanced_query = query
+                for title in document_titles:
+                    if not re.search(r'\b' + re.escape(title) + r'\b', enhanced_query, re.IGNORECASE):
+                        enhanced_query += f"\n\nNote: Pay special attention to document titled '{title}' if available."
+                knowledge_context = structured_memory.get_knowledge_for_query(enhanced_query)
+            else:
+                knowledge_context = structured_memory.get_knowledge_for_query(query)
+            
+            if knowledge_context:
+                content_parts.append(knowledge_context)
     except Exception as e:
         print(f"❌ Error retrieving structured knowledge: {e}")
         # If structured memory fails, use the provided context as fallback
@@ -42,8 +62,8 @@ def generate_response(query, context="", conversation_context=""):
     content = "\n\n".join(content_parts)
     
     # Debug the system instruction and content length
-    print(f"DEBUG: System instruction length: {len(system_prompt)}")
-    print(f"DEBUG: Content length (chars): {len(content)}")
+    # print(f"DEBUG: System instruction length: {len(system_prompt)}")
+    # print(f"DEBUG: Content length (chars): {len(content)}")
     
     try:
         # Configure the generation parameters with system instruction and safety settings

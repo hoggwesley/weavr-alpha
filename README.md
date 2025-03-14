@@ -16,12 +16,15 @@ Weavr Alpha connects to your Obsidian vault and uses advanced AI models (current
 - **Document Analysis**: Identifies sections, key passages, and themes in your documents
 - **Persistent Storage**: Maintains structured knowledge between sessions for faster startup
 - **File Monitoring**: Watches for changes in your knowledge base and updates the structured memory in real-time
+- **Intelligent File Prioritization**: Prioritizes files based on directory depth, keywords, and recency when file limits are reached
+- **Knowledge Context Management**: Allows clearing knowledge context without disabling the system
 
 #### AI Generation
 
 - **Gemini Integration**: Uses Google's Gemini Flash 2.0 as the primary language model
 - **Context Injection**: Directly injects relevant structured knowledge into the model's context window
 - **Configurable System Prompts**: Allows customization of AI behavior through editable system prompts
+- **Document Title Awareness**: Enhanced recognition of document titles in queries for more relevant responses
 
 #### Configuration System
 
@@ -91,6 +94,8 @@ Edit the `config.yaml` file to set:
 - Use `/knowledge` to manage your structured knowledge system
 - Use `/knowledge status` to view knowledge base structure
 - Use `/knowledge set` to set knowledge base directory
+- Use `/knowledge limit` to set maximum files to process
+- Use `/knowledge clear` to clear knowledge context and optionally set a new directory
 - Use `/exit` to quit the application
 
 ## Changelog
